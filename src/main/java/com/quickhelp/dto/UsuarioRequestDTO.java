@@ -5,7 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-public class UsuarioRequestDTO { // DTO que define los datos permitidos al crear o recibir un usuario desde la app o panel web.
+public class UsuarioRequestDTO { // DTO que define los datos permitidos al crear o recibir un usuario desde la
+                                 // app o panel web.
 
     @NotNull(message = "El rol es obligatorio") // Evita crear un usuario sin rol.
     private Integer idRol;
@@ -14,9 +15,10 @@ public class UsuarioRequestDTO { // DTO que define los datos permitidos al crear
     @Size(max = 150, message = "El nombre no puede superar 150 caracteres") // Respeta el tamaño definido en PostgreSQL.
     private String nombreApellido;
 
-    @NotBlank(message = "El correo es obligatorio") // El correo debe venir informado.
-    @Email(message = "El correo no tiene un formato válido") // Verifica formato tipo usuario@correo.com.
-    private String correo;
+    @NotBlank(message = "El correo es obligatorio") // Requiere un correo.
+    @Email(message = "El correo no tiene un formato válido") // Valida el formato.
+    @Size(max = 150, message = "El correo no puede superar 150 caracteres") // Respeta PostgreSQL.
+    private String correo; // Correo electrónico del usuario.
 
     @Size(max = 30, message = "El teléfono no puede superar 30 caracteres")
     private String telefono; // Teléfono opcional del usuario.
@@ -33,30 +35,75 @@ public class UsuarioRequestDTO { // DTO que define los datos permitidos al crear
     private Boolean vozActiva = false; // Por defecto la activación por voz queda deshabilitada.
     private Boolean estado = true; // Por defecto el usuario se crea activo.
 
-    public Integer getIdRol() { return idRol; }
-    public void setIdRol(Integer idRol) { this.idRol = idRol; }
+    public Integer getIdRol() {
+        return idRol;
+    }
 
-    public String getNombreApellido() { return nombreApellido; }
-    public void setNombreApellido(String nombreApellido) { this.nombreApellido = nombreApellido; }
+    public void setIdRol(Integer idRol) {
+        this.idRol = idRol;
+    }
 
-    public String getCorreo() { return correo; }
-    public void setCorreo(String correo) { this.correo = correo; }
+    public String getNombreApellido() {
+        return nombreApellido;
+    }
 
-    public String getTelefono() { return telefono; }
-    public void setTelefono(String telefono) { this.telefono = telefono; }
+    public void setNombreApellido(String nombreApellido) {
+        this.nombreApellido = nombreApellido;
+    }
 
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
+    public String getCorreo() {
+        return correo;
+    }
 
-    public String getTokenFcm() { return tokenFcm; }
-    public void setTokenFcm(String tokenFcm) { this.tokenFcm = tokenFcm; }
+    public void setCorreo(String correo) {
+        this.correo = correo;
+    }
 
-    public String getFraseActivacion() { return fraseActivacion; }
-    public void setFraseActivacion(String fraseActivacion) { this.fraseActivacion = fraseActivacion; }
+    public String getTelefono() {
+        return telefono;
+    }
 
-    public Boolean getVozActiva() { return vozActiva; }
-    public void setVozActiva(Boolean vozActiva) { this.vozActiva = vozActiva; }
+    public void setTelefono(String telefono) {
+        this.telefono = telefono;
+    }
 
-    public Boolean getEstado() { return estado; }
-    public void setEstado(Boolean estado) { this.estado = estado; }
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getTokenFcm() {
+        return tokenFcm;
+    }
+
+    public void setTokenFcm(String tokenFcm) {
+        this.tokenFcm = tokenFcm;
+    }
+
+    public String getFraseActivacion() {
+        return fraseActivacion;
+    }
+
+    public void setFraseActivacion(String fraseActivacion) {
+        this.fraseActivacion = fraseActivacion;
+    }
+
+    public Boolean getVozActiva() {
+        return vozActiva;
+    }
+
+    public void setVozActiva(Boolean vozActiva) {
+        this.vozActiva = vozActiva;
+    }
+
+    public Boolean getEstado() {
+        return estado;
+    }
+
+    public void setEstado(Boolean estado) {
+        this.estado = estado;
+    }
 }
