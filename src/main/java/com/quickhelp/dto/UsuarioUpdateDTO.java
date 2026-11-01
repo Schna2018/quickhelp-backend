@@ -14,9 +14,10 @@ public class UsuarioUpdateDTO { // DTO con los datos permitidos para actualizar 
     @Size(max = 150, message = "El nombre no puede superar 150 caracteres")
     private String nombreApellido; // Nombre completo del usuario.
 
-    @NotBlank(message = "El correo es obligatorio")
-    @Email(message = "El correo no tiene un formato válido")
-    private String correo; // Correo del usuario.
+    @NotBlank(message = "El correo es obligatorio") // Requiere un correo.
+    @Email(message = "El correo no tiene un formato válido") // Valida el formato.
+    @Size(max = 150, message = "El correo no puede superar 150 caracteres") // Respeta PostgreSQL.
+    private String correo; // Correo electrónico del usuario.
 
     @Size(max = 30, message = "El teléfono no puede superar 30 caracteres")
     private String telefono; // Teléfono opcional.
@@ -32,30 +33,75 @@ public class UsuarioUpdateDTO { // DTO con los datos permitidos para actualizar 
     private Boolean vozActiva; // Estado de la función de voz.
     private Boolean estado; // Estado activo/inactivo del usuario.
 
-    public Integer getIdRol() { return idRol; }
-    public void setIdRol(Integer idRol) { this.idRol = idRol; }
+    public Integer getIdRol() {
+        return idRol;
+    }
 
-    public String getNombreApellido() { return nombreApellido; }
-    public void setNombreApellido(String nombreApellido) { this.nombreApellido = nombreApellido; }
+    public void setIdRol(Integer idRol) {
+        this.idRol = idRol;
+    }
 
-    public String getCorreo() { return correo; }
-    public void setCorreo(String correo) { this.correo = correo; }
+    public String getNombreApellido() {
+        return nombreApellido;
+    }
 
-    public String getTelefono() { return telefono; }
-    public void setTelefono(String telefono) { this.telefono = telefono; }
+    public void setNombreApellido(String nombreApellido) {
+        this.nombreApellido = nombreApellido;
+    }
 
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
+    public String getCorreo() {
+        return correo;
+    }
 
-    public String getTokenFcm() { return tokenFcm; }
-    public void setTokenFcm(String tokenFcm) { this.tokenFcm = tokenFcm; }
+    public void setCorreo(String correo) {
+        this.correo = correo;
+    }
 
-    public String getFraseActivacion() { return fraseActivacion; }
-    public void setFraseActivacion(String fraseActivacion) { this.fraseActivacion = fraseActivacion; }
+    public String getTelefono() {
+        return telefono;
+    }
 
-    public Boolean getVozActiva() { return vozActiva; }
-    public void setVozActiva(Boolean vozActiva) { this.vozActiva = vozActiva; }
+    public void setTelefono(String telefono) {
+        this.telefono = telefono;
+    }
 
-    public Boolean getEstado() { return estado; }
-    public void setEstado(Boolean estado) { this.estado = estado; }
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getTokenFcm() {
+        return tokenFcm;
+    }
+
+    public void setTokenFcm(String tokenFcm) {
+        this.tokenFcm = tokenFcm;
+    }
+
+    public String getFraseActivacion() {
+        return fraseActivacion;
+    }
+
+    public void setFraseActivacion(String fraseActivacion) {
+        this.fraseActivacion = fraseActivacion;
+    }
+
+    public Boolean getVozActiva() {
+        return vozActiva;
+    }
+
+    public void setVozActiva(Boolean vozActiva) {
+        this.vozActiva = vozActiva;
+    }
+
+    public Boolean getEstado() {
+        return estado;
+    }
+
+    public void setEstado(Boolean estado) {
+        this.estado = estado;
+    }
 }
