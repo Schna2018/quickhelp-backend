@@ -1,6 +1,6 @@
-
 package com.quickhelp.config;
 
+import java.util.List; // Define los valores permitidos para CORS.
 import org.springframework.context.annotation.Bean; // Define componentes Spring.
 import org.springframework.context.annotation.Configuration; // Configuración de seguridad.
 import org.springframework.http.HttpMethod; // Métodos HTTP.
@@ -9,6 +9,8 @@ import org.springframework.security.config.http.SessionCreationPolicy; // Sesion
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter; // Convierte JWT.
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter; // Extrae roles.
 import org.springframework.security.web.SecurityFilterChain; // Filtros de seguridad.
+import org.springframework.web.cors.CorsConfiguration; // Configura los permisos CORS.
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource; // Aplica CORS a las rutas.
 
 @Configuration // Configuración de seguridad del backend.
 public class SecurityConfig {
@@ -16,6 +18,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Permite peticiones desde Ionic.
                 .csrf(csrf -> csrf.disable()) // API sin sesiones basadas en cookies.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
@@ -58,5 +61,27 @@ public class SecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);
         return converter;
+    }
+
+    @Bean
+    public UrlBasedCorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+
+        // Permite el origen utilizado actualmente por ionic serve.
+        config.setAllowedOrigins(List.of("http://localhost:8100"));
+
+        // Métodos permitidos; las reglas de autorización anteriores siguen aplicándose.
+        config.setAllowedMethods(List.of(
+                "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+        ));
+
+        // Permite enviar datos JSON y el token Bearer.
+        config.setAllowedHeaders(List.of("Content-Type", "Authorization"));
+        config.setAllowCredentials(false); // La API utiliza tokens, no cookies de sesión.
+        config.setMaxAge(3600L); // Guarda la comprobación CORS durante una hora.
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config);
+        return source;
     }
 }
