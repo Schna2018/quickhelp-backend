@@ -1,13 +1,14 @@
 
 package com.quickhelp.config;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.context.annotation.Bean; // Define componentes Spring.
+import org.springframework.context.annotation.Configuration; // Configuración de seguridad.
+import org.springframework.http.HttpMethod; // Métodos HTTP.
+import org.springframework.security.config.annotation.web.builders.HttpSecurity; // Seguridad HTTP.
+import org.springframework.security.config.http.SessionCreationPolicy; // Sesiones sin estado.
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter; // Convierte JWT.
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter; // Extrae roles.
+import org.springframework.security.web.SecurityFilterChain; // Filtros de seguridad.
 
 @Configuration // Configuración de seguridad del backend.
 public class SecurityConfig {
@@ -24,9 +25,24 @@ public class SecurityConfig {
                                 "/api/auth/registro/adulto", // Registro de adultos mayores.
                                 "/api/auth/registro/asistente" // Registro de personas de apoyo.
                         ).permitAll()
-                        .anyRequest().authenticated() // Los demás endpoints requieren JWT.
+
+                        // Solo administradores pueden consultar configuraciones.
+                        .requestMatchers(HttpMethod.GET, "/api/parametros", "/api/parametros/**")
+                        .hasRole("ADMINISTRADOR")
+
+                        // Solo administradores pueden modificar configuraciones.
+                        .requestMatchers(HttpMethod.PATCH, "/api/parametros/**")
+                        .hasRole("ADMINISTRADOR")
+
+                        // Bloquea otros métodos no autorizados en este módulo.
+                        .requestMatchers("/api/parametros", "/api/parametros/**")
+                        .denyAll()
+
+                        // Los demás endpoints requieren JWT.
+                        .anyRequest().authenticated()
                 )
 
+                // Valida los JWT y convierte sus roles en autoridades Spring.
                 .oauth2ResourceServer(
                         oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 

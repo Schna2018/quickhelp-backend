@@ -1,17 +1,27 @@
+
 package com.quickhelp.repository;
 
-import com.quickhelp.entity.Usuario;
-import org.springframework.data.jpa.repository.JpaRepository;
-import java.util.Optional;
+import com.quickhelp.entity.Usuario; // Entidad que representa un usuario.
+import org.springframework.data.jpa.repository.JpaRepository; // Operaciones CRUD de JPA.
+import java.util.Optional; // Permite devolver resultados opcionales.
 
-public interface UsuarioRepository extends JpaRepository<Usuario, Integer> { // Permite CRUD sobre la tabla usuario usando id_usuario como Integer.
+public interface UsuarioRepository extends JpaRepository<Usuario, Integer> {
 
-    Optional<Usuario> findByCorreo(String correo); // Busca un usuario por su correo; servirá más adelante para login y validaciones.
+    // Busca un usuario por correo electrónico.
+    Optional<Usuario> findByCorreo(String correo);
 
-    boolean existsByCorreo(String correo); // Verifica si ya existe un usuario con ese correo antes de registrarlo.
+    // Comprueba si ya existe un correo registrado.
+    boolean existsByCorreo(String correo);
 
-    boolean existsByCodigoVinculacion(String codigoVinculacion);// Verifica que el código generado no pertenezca a otro usuario.
+    // Comprueba si un código de vinculación ya está registrado.
+    boolean existsByCodigoVinculacion(String codigoVinculacion);
 
-    Optional<Usuario> findByCodigoVinculacion(String codigoVinculacion); // Busca al adulto mayor mediante su código.
+    // Busca un usuario mediante su código de vinculación.
+    Optional<Usuario> findByCodigoVinculacion(String codigoVinculacion);
 
+    // Cuenta únicamente los usuarios que se encuentran activos.
+    long countByEstadoTrue();
+
+    // Cuenta los usuarios activos que pertenecen a un rol específico.
+    long countByRol_CodigoAndEstadoTrue(String codigoRol);
 }

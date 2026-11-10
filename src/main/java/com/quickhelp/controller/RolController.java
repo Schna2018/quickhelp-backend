@@ -1,22 +1,38 @@
+
 package com.quickhelp.controller;
 
-import com.quickhelp.entity.Rol;
-import com.quickhelp.service.RolService;
-import org.springframework.web.bind.annotation.*;
-import java.util.List;
+import com.quickhelp.dto.RolResponseDTO; // Datos seguros del rol.
+import com.quickhelp.entity.Rol; // Entidad de PostgreSQL.
+import com.quickhelp.service.RolService; // Lógica de roles.
+import java.util.List; // Colección de resultados.
+import org.springframework.web.bind.annotation.GetMapping; // Endpoint GET.
+import org.springframework.web.bind.annotation.RequestMapping; // Ruta base.
+import org.springframework.web.bind.annotation.RestController; // Controlador REST.
 
-@RestController // Indica que esta clase atiende solicitudes HTTP y devuelve respuestas, normalmente en JSON.
-@RequestMapping("/api/roles") // Define la ruta base de esta API: http://localhost:8080/api/roles
+@RestController // Expone los endpoints HTTP.
+@RequestMapping("/api/roles") // Ruta base de los roles.
 public class RolController {
 
-    private final RolService rolService; // Servicio que contiene la lógica relacionada con los roles.
+    private final RolService rolService; // Servicio existente.
 
     public RolController(RolService rolService) {
-        this.rolService = rolService; // Spring inyecta automáticamente una instancia de RolService.
+        this.rolService = rolService; // Inyección del servicio.
     }
 
-    @GetMapping // Atiende solicitudes HTTP GET realizadas a /api/roles.
-    public List<Rol> listarRoles() {
-        return rolService.listarRoles(); // Obtiene todos los roles y los devuelve al frontend en formato JSON.
+    @GetMapping // GET /api/roles.
+    public List<RolResponseDTO> listarRoles() {
+        return rolService.listarRoles().stream()
+                .map(this::convertirDTO)
+                .toList(); // Devuelve únicamente los campos necesarios.
+    }
+
+    // Convierte una entidad Rol en un DTO.
+    private RolResponseDTO convertirDTO(Rol rol) {
+        return new RolResponseDTO(
+                rol.getIdRol(),
+                rol.getCodigo(),
+                rol.getNombre(),
+                rol.getEstado()
+        );
     }
 }

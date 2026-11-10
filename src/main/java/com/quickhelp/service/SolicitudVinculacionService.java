@@ -1,7 +1,6 @@
 
 package com.quickhelp.service;
 
-
 import com.quickhelp.entity.RedApoyo; // Relación aprobada.
 import com.quickhelp.entity.SolicitudVinculacion; // Solicitud de vinculación.
 import com.quickhelp.entity.Usuario; // Usuarios del sistema.
@@ -14,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional; // Transaccione
 import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 import java.time.LocalDateTime; // Fecha y hora.
 import org.springframework.security.core.Authentication; // Identifica al adulto autenticado.
+import com.quickhelp.dto.SolicitudVinculacionResponseDTO; // DTO con los datos seguros de cada solicitud.
+import java.util.List; // Permite devolver varias solicitudes pendientes.
 
 @Service
 public class SolicitudVinculacionService {
@@ -75,12 +76,55 @@ public class SolicitudVinculacionService {
         solicitudRepository.save(solicitud); // Guarda la solicitud sin vincular todavía.
     }
 
+    @Transactional(readOnly = true) // Consulta sin modificar registros.
+    public List<SolicitudVinculacionResponseDTO> listarPendientes(Authentication authentication) {
+        Integer idAdulto = obtenerIdAutenticado(authentication); // Obtiene el ID desde el JWT.
+
+        Usuario adulto = usuarioRepository.findById(idAdulto)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado."));
+
+        // Solo los adultos mayores activos pueden consultar sus solicitudes.
+        if (!Boolean.TRUE.equals(adulto.getEstado())
+                || adulto.getRol() == null
+                || !Boolean.TRUE.equals(adulto.getRol().getEstado())
+                || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Solo el adulto mayor puede consultar solicitudes.");
+        }
+
+        // Consulta exclusivamente las solicitudes pendientes del adulto autenticado.
+        return solicitudRepository.findByAdultoMayor_IdUsuarioAndEstado(idAdulto, "PENDIENTE")
+                .stream()
+                .map(solicitud -> new SolicitudVinculacionResponseDTO(
+                        solicitud.getIdSolicitud(), // Identificador de la solicitud.
+                        solicitud.getAsistente().getIdUsuario(), // ID del asistente.
+                        solicitud.getAsistente().getNombreApellido(), // Nombre del asistente.
+                        solicitud.getFechaSolicitud(), // Fecha de creación.
+                        solicitud.getEstado() // Estado PENDIENTE.
+                ))
+                .toList();
+    }
+
     @Transactional
     public void aprobarSolicitud(Integer idSolicitud, Authentication authentication) {
-        Integer idAdulto = obtenerIdAutenticado(authentication); // Identifica al usuario del JWT.
+
+        Integer idAdulto = obtenerIdAutenticado(authentication); // Identifica al adulto autenticado.
         SolicitudVinculacion solicitud = obtenerSolicitudPendiente(idSolicitud, idAdulto);
 
-        Integer idAsistente = solicitud.getAsistente().getIdUsuario();
+        // Verifica que el asistente continúe autorizado para vincularse.
+        Usuario asistente = solicitud.getAsistente();
+
+        if (!Boolean.TRUE.equals(asistente.getEstado())
+                || asistente.getRol() == null
+                || !Boolean.TRUE.equals(asistente.getRol().getEstado())
+                || !"ASISTENTE".equals(asistente.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "El asistente ya no está habilitado para vincularse.");
+        }
+
+        Integer idAsistente = asistente.getIdUsuario(); // Identificador del asistente validado.
 
         // Evita crear dos relaciones para la misma pareja.
         if (redApoyoRepository.existsByAdultoMayor_IdUsuarioAndIntegrante_IdUsuario(
@@ -127,10 +171,19 @@ public class SolicitudVinculacionService {
         if (!"PENDIENTE".equals(solicitud.getEstado())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La solicitud ya fue respondida.");
         }
-        if (!Boolean.TRUE.equals(solicitud.getAdultoMayor().getEstado())
-                || !"ADULTO_MAYOR".equals(solicitud.getAdultoMayor().getRol().getCodigo())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Adulto mayor no autorizado.");
+
+        // Verifica que el adulto mayor y su rol sigan activos.
+        Usuario adulto = solicitud.getAdultoMayor();
+
+        if (!Boolean.TRUE.equals(adulto.getEstado())
+                || adulto.getRol() == null
+                || !Boolean.TRUE.equals(adulto.getRol().getEstado())
+                || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Adulto mayor no autorizado.");
         }
+
         return solicitud;
     }
 

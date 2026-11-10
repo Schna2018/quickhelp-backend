@@ -1,108 +1,165 @@
+
 package com.quickhelp.service;
 
-import com.quickhelp.dto.UsuarioRequestDTO;
-import com.quickhelp.entity.Rol;
-import com.quickhelp.entity.Usuario;
-import com.quickhelp.repository.RolRepository;
-import com.quickhelp.repository.UsuarioRepository;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import java.util.List;
-import java.util.Optional;
-import com.quickhelp.dto.UsuarioUpdateDTO; // DTO con los datos permitidos para modificar un usuario.
+import com.quickhelp.dto.UsuarioRequestDTO; // Datos para crear usuarios.
+import com.quickhelp.dto.UsuarioUpdateDTO; // Datos para actualizar usuarios.
+import com.quickhelp.entity.Rol; // Entidad de roles.
+import com.quickhelp.entity.Usuario; // Entidad de usuarios.
+import com.quickhelp.repository.RolRepository; // Acceso a los roles.
+import com.quickhelp.repository.UsuarioRepository; // Acceso a los usuarios.
+import java.util.List; // Listas de usuarios.
+import java.util.Optional; // Resultados opcionales.
+import org.springframework.http.HttpStatus; // Estados HTTP.
+import org.springframework.security.crypto.password.PasswordEncoder; // Cifrado de contraseñas.
+import org.springframework.stereotype.Service; // Servicio Spring.
+import org.springframework.transaction.annotation.Transactional; // Transacciones.
+import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 
-@Service // Indica que esta clase contiene la lógica de negocio de los usuarios.
+@Service // Registra la clase como servicio.
 public class UsuarioService {
 
-    private final UsuarioRepository usuarioRepository; // Permite realizar operaciones CRUD sobre usuario.
-    private final RolRepository rolRepository; // Permite buscar el rol que se asignará al usuario.
-    private final PasswordEncoder passwordEncoder; // Permite convertir la contraseña en un hash BCrypt.
+    private final UsuarioRepository usuarioRepository; // Repositorio de usuarios.
+    private final RolRepository rolRepository; // Repositorio de roles.
+    private final PasswordEncoder passwordEncoder; // Codificador BCrypt.
 
-    public UsuarioService(UsuarioRepository usuarioRepository, RolRepository rolRepository,
-            PasswordEncoder passwordEncoder) {
-        this.usuarioRepository = usuarioRepository; // Spring inyecta UsuarioRepository.
-        this.rolRepository = rolRepository; // Spring inyecta RolRepository.
-        this.passwordEncoder = passwordEncoder; // Spring inyecta el BCrypt configurado en PasswordConfig.
+    public UsuarioService(UsuarioRepository usuarioRepository,
+                          RolRepository rolRepository,
+                          PasswordEncoder passwordEncoder) {
+        this.usuarioRepository = usuarioRepository;
+        this.rolRepository = rolRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
+    @Transactional(readOnly = true) // Consulta sin modificar registros.
     public List<Usuario> listarUsuarios() {
-        return usuarioRepository.findAll(); // Obtiene todos los usuarios registrados.
+        return usuarioRepository.findAll(); // Recupera los usuarios.
     }
 
+    @Transactional(readOnly = true)
     public Optional<Usuario> buscarPorId(Integer idUsuario) {
-        return usuarioRepository.findById(idUsuario); // Busca un usuario por su ID.
+        return usuarioRepository.findById(idUsuario); // Busca por identificador.
     }
 
+    @Transactional(readOnly = true)
     public Optional<Usuario> buscarPorCorreo(String correo) {
-        return usuarioRepository.findByCorreo(correo); // Busca un usuario por su correo.
+        return usuarioRepository.findByCorreo(correo); // Busca por correo.
     }
 
+    @Transactional(readOnly = true)
     public boolean existeCorreo(String correo) {
-        return usuarioRepository.existsByCorreo(correo); // Devuelve true si el correo ya está registrado.
+        return usuarioRepository.existsByCorreo(correo); // Comprueba duplicados.
     }
 
-    public Usuario crearUsuario(UsuarioRequestDTO dto) { // Recibe los datos enviados desde la app móvil o panel web.
+    @Transactional // Crea un usuario dentro de una transacción.
+    public Usuario crearUsuario(UsuarioRequestDTO dto) {
+
         if (usuarioRepository.existsByCorreo(dto.getCorreo())) {
-            throw new RuntimeException("El correo ya está registrado"); // Evita correos duplicados.
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "El correo ya está registrado.");
         }
 
         Rol rol = rolRepository.findById(dto.getIdRol())
-                .orElseThrow(() -> new RuntimeException("El rol no existe")); // Comprueba que id_rol exista.
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "El rol no existe."));
 
-        Usuario usuario = new Usuario(); // Crea una nueva entidad Usuario.
-        usuario.setRol(rol); // Asigna el rol seleccionado.
-        usuario.setNombreApellido(dto.getNombreApellido()); // Asigna nombre y apellido.
-        usuario.setCorreo(dto.getCorreo()); // Asigna correo.
-        usuario.setTelefono(dto.getTelefono()); // Asigna teléfono.
-        usuario.setPasswordHash(passwordEncoder.encode(dto.getPassword())); // Convierte la contraseña a hash BCrypt.
-        usuario.setTokenFcm(dto.getTokenFcm()); // Guarda token para futuras notificaciones push.
-        usuario.setFraseActivacion(dto.getFraseActivacion()); // Guarda frase de activación por voz.
-        usuario.setVozActiva(dto.getVozActiva() != null ? dto.getVozActiva() : false); // False si no se especifica.
-        usuario.setEstado(dto.getEstado() != null ? dto.getEstado() : true); // Activo por defecto.
+        if (!Boolean.TRUE.equals(rol.getEstado())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "No se puede asignar un rol desactivado.");
+        }
 
-        return usuarioRepository.save(usuario); // INSERT del nuevo usuario en PostgreSQL.
+        Usuario usuario = new Usuario(); // Construye el usuario.
+        usuario.setRol(rol);
+        usuario.setNombreApellido(dto.getNombreApellido());
+        usuario.setCorreo(dto.getCorreo());
+        usuario.setTelefono(dto.getTelefono());
+        usuario.setPasswordHash(passwordEncoder.encode(dto.getPassword())); // Cifra contraseña.
+        usuario.setTokenFcm(dto.getTokenFcm());
+        usuario.setFraseActivacion(dto.getFraseActivacion());
+        usuario.setVozActiva(dto.getVozActiva() != null ? dto.getVozActiva() : false);
+        usuario.setEstado(dto.getEstado() != null ? dto.getEstado() : true);
+
+        return usuarioRepository.save(usuario); // Guarda en PostgreSQL.
     }
 
-    public Usuario actualizarUsuario(Integer idUsuario, UsuarioUpdateDTO dto) { // Actualiza un usuario existente.
+    @Transactional // Actualiza un usuario dentro de una transacción.
+    public Usuario actualizarUsuario(Integer idUsuario, UsuarioUpdateDTO dto) {
+
         Usuario usuario = usuarioRepository.findById(idUsuario)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado")); // Comprueba que el usuario exista.
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado."));
 
         Rol rol = rolRepository.findById(dto.getIdRol())
-                .orElseThrow(() -> new RuntimeException("El rol no existe")); // Comprueba que el nuevo rol exista.
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "El rol no existe."));
 
-        usuarioRepository.findByCorreo(dto.getCorreo()).ifPresent(usuarioCorreo -> { // Busca si el correo ya pertenece
-                                                                                     // a alguien.
+        if (!Boolean.TRUE.equals(rol.getEstado())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "No se puede asignar un rol desactivado.");
+        }
+
+        // Evita modificar el rol de una cuenta administradora.
+        if (usuario.getRol() != null
+                && "ADMINISTRADOR".equals(usuario.getRol().getCodigo())
+                && !"ADMINISTRADOR".equals(rol.getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "No se permite cambiar el rol de una cuenta administradora.");
+        }
+
+        // Comprueba que el correo no pertenezca a otro usuario.
+        usuarioRepository.findByCorreo(dto.getCorreo()).ifPresent(usuarioCorreo -> {
             if (!usuarioCorreo.getIdUsuario().equals(idUsuario)) {
-                throw new RuntimeException("El correo ya está registrado por otro usuario"); // Impide correos
-                                                                                             // duplicados.
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "El correo ya está registrado por otro usuario.");
             }
         });
 
         usuario.setRol(rol); // Actualiza el rol.
-        usuario.setNombreApellido(dto.getNombreApellido()); // Actualiza nombre y apellido.
-        usuario.setCorreo(dto.getCorreo()); // Actualiza correo.
-        usuario.setTelefono(dto.getTelefono()); // Actualiza teléfono.
-        usuario.setTokenFcm(dto.getTokenFcm()); // Actualiza token de notificaciones.
-        usuario.setFraseActivacion(dto.getFraseActivacion()); // Actualiza frase de activación.
+        usuario.setNombreApellido(dto.getNombreApellido());
+        usuario.setCorreo(dto.getCorreo());
+        usuario.setTelefono(dto.getTelefono());
 
-        if (dto.getVozActiva() != null)
-            usuario.setVozActiva(dto.getVozActiva()); // Solo cambia vozActiva si fue enviada.
-        if (dto.getEstado() != null)
-            usuario.setEstado(dto.getEstado()); // Solo cambia estado si fue enviado.
-
-        if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
-            usuario.setPasswordHash(passwordEncoder.encode(dto.getPassword())); // Solo cambia la contraseña si se envió
-                                                                                // una nueva.
+        // Evita borrar el token FCM cuando el campo no se envía.
+        if (dto.getTokenFcm() != null) {
+            usuario.setTokenFcm(dto.getTokenFcm());
         }
 
-        return usuarioRepository.save(usuario); // JpaRepository hace el UPDATE en PostgreSQL.
+        // Conserva la frase de activación cuando no se envía otra.
+        if (dto.getFraseActivacion() != null) {
+            usuario.setFraseActivacion(dto.getFraseActivacion());
+        }
+
+        if (dto.getVozActiva() != null) {
+            usuario.setVozActiva(dto.getVozActiva()); // Actualiza activación por voz.
+        }
+
+        if (dto.getEstado() != null) {
+            usuario.setEstado(dto.getEstado()); // Actualiza estado de la cuenta.
+        }
+
+        // Actualiza la contraseña solo cuando se proporciona una nueva.
+        if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
+            usuario.setPasswordHash(passwordEncoder.encode(dto.getPassword()));
+        }
+
+        return usuarioRepository.save(usuario); // Guarda los cambios.
     }
 
-    public void eliminarUsuario(Integer idUsuario) { // Elimina un usuario existente por su ID.
-        if (!usuarioRepository.existsById(idUsuario)) { // Comprueba primero que el usuario exista.
-            throw new RuntimeException("Usuario no encontrado"); // Evita intentar eliminar un ID inexistente.
+    @Transactional // Conserva el usuario y sus relaciones históricas.
+    public void eliminarUsuario(Integer idUsuario) {
+
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado."));
+
+        if (!Boolean.TRUE.equals(usuario.getEstado())) {
+            return; // Ya está desactivado.
         }
 
-        usuarioRepository.deleteById(idUsuario); // DELETE físico del usuario en PostgreSQL.
+        usuario.setEstado(false); // Desactivación lógica.
+        usuarioRepository.save(usuario); // Conserva el historial.
     }
 }

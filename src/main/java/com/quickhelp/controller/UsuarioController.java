@@ -1,67 +1,93 @@
+
 package com.quickhelp.controller;
 
-import com.quickhelp.dto.UsuarioRequestDTO;
-import com.quickhelp.dto.UsuarioResponseDTO;
-import com.quickhelp.entity.Usuario;
-import com.quickhelp.service.UsuarioService;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
-import java.util.List;
-import com.quickhelp.dto.UsuarioUpdateDTO; // DTO utilizado para recibir los datos que se modificarán.
+import com.quickhelp.dto.UsuarioRequestDTO; // DTO para crear usuarios.
+import com.quickhelp.dto.UsuarioResponseDTO; // DTO para devolver datos seguros.
+import com.quickhelp.dto.UsuarioUpdateDTO; // DTO para actualizar usuarios.
+import com.quickhelp.entity.Usuario; // Entidad Usuario.
+import com.quickhelp.service.PermisoService; // Servicio de autorización.
+import com.quickhelp.service.UsuarioService; // Servicio de usuarios.
+import jakarta.validation.Valid; // Validaciones de los DTO.
+import java.util.List; // Lista de usuarios.
+import org.springframework.http.HttpStatus; // Códigos de respuesta HTTP.
+import org.springframework.security.core.Authentication; // Usuario autenticado.
+import org.springframework.web.bind.annotation.*; // Anotaciones REST.
+import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 
-@RestController // Indica que esta clase recibe peticiones HTTP y devuelve respuestas JSON.
-@RequestMapping("/api/usuarios") // Define la ruta base de esta API: /api/usuarios.
+@RestController // Controlador REST para administrar usuarios.
+@RequestMapping("/api/usuarios") // Ruta principal del módulo.
 public class UsuarioController {
 
-    private final UsuarioService usuarioService; // Servicio que contiene la lógica de negocio de usuarios.
+    private final UsuarioService usuarioService; // Lógica de negocio.
+    private final PermisoService permisoService; // Validación de permisos.
 
-    public UsuarioController(UsuarioService usuarioService) {
-        this.usuarioService = usuarioService; // Spring inyecta automáticamente UsuarioService.
+    public UsuarioController(UsuarioService usuarioService, PermisoService permisoService) {
+        this.usuarioService = usuarioService;
+        this.permisoService = permisoService;
     }
 
-    @GetMapping // Atiende GET /api/usuarios y obtiene todos los usuarios.
-    public List<UsuarioResponseDTO> listarUsuarios() {
-        return usuarioService.listarUsuarios()
-                .stream() // Recorre la lista de entidades Usuario.
-                .map(this::convertirADTO) // Convierte cada Usuario a UsuarioResponseDTO.
-                .toList(); // Devuelve la lista final sin exponer passwordHash.
+    @GetMapping // GET /api/usuarios
+    public List<UsuarioResponseDTO> listarUsuarios(Authentication authentication) {
+        permisoService.exigirPermiso(authentication, "USUARIO_GESTIONAR"); // Verifica autorización.
+        return usuarioService.listarUsuarios().stream()
+                .map(this::convertirADTO) // Convierte entidades a DTO.
+                .toList();
     }
 
-    @GetMapping("/{id}") // Atiende GET /api/usuarios/{id} y busca un usuario específico.
-    public UsuarioResponseDTO buscarPorId(@PathVariable Integer id) { // @PathVariable obtiene el ID desde la URL.
+    @GetMapping("/{id}") // GET /api/usuarios/{id}
+    public UsuarioResponseDTO buscarPorId(@PathVariable Integer id,
+            Authentication authentication) {
+        permisoService.exigirPermiso(authentication, "USUARIO_GESTIONAR"); // Verifica autorización.
+
         Usuario usuario = usuarioService.buscarPorId(id)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado")); // Error si el ID no existe.
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado"));
 
-        return convertirADTO(usuario); // Devuelve los datos seguros del usuario.
+        return convertirADTO(usuario);
     }
 
-    @PostMapping // Atiende POST /api/usuarios y permite crear un nuevo usuario.
-    @ResponseStatus(HttpStatus.CREATED) // Devuelve código HTTP 201 cuando el usuario se crea correctamente.
-    public UsuarioResponseDTO crearUsuario(@Valid @RequestBody UsuarioRequestDTO dto) {
-        // @RequestBody convierte el JSON recibido en UsuarioRequestDTO.
-        // @Valid ejecuta las validaciones @NotNull, @NotBlank, @Email, @Size, etc.
-
-        Usuario usuarioCreado = usuarioService.crearUsuario(dto); // Envía los datos al Service para guardarlos.
-        return convertirADTO(usuarioCreado); // Devuelve el usuario creado sin mostrar passwordHash.
+    @PostMapping // POST /api/usuarios
+    @ResponseStatus(HttpStatus.CREATED) // Devuelve HTTP 201.
+    public UsuarioResponseDTO crearUsuario(@Valid @RequestBody UsuarioRequestDTO dto,
+            Authentication authentication) {
+        permisoService.exigirPermiso(authentication, "USUARIO_GESTIONAR"); // Verifica autorización.
+        Usuario usuarioCreado = usuarioService.crearUsuario(dto);
+        return convertirADTO(usuarioCreado);
     }
 
-    @PutMapping("/{id}") // Atiende PUT /api/usuarios/{id} para modificar un usuario existente.
-    public UsuarioResponseDTO actualizarUsuario(
-            @PathVariable Integer id, // Obtiene el id_usuario directamente desde la URL.
-            @Valid @RequestBody UsuarioUpdateDTO dto) { // Recibe y valida los nuevos datos enviados en JSON.
-
-        Usuario usuarioActualizado = usuarioService.actualizarUsuario(id, dto); // Envía los cambios al Service.
-        return convertirADTO(usuarioActualizado); // Devuelve el usuario actualizado sin exponer passwordHash.
+    @PutMapping("/{id}") // PUT /api/usuarios/{id}
+    public UsuarioResponseDTO actualizarUsuario(@PathVariable Integer id,
+            @Valid @RequestBody UsuarioUpdateDTO dto,
+            Authentication authentication) {
+        permisoService.exigirPermiso(authentication, "USUARIO_GESTIONAR"); // Verifica autorización.
+        Usuario usuarioActualizado = usuarioService.actualizarUsuario(id, dto);
+        return convertirADTO(usuarioActualizado);
     }
 
-    @DeleteMapping("/{id}") // Atiende DELETE /api/usuarios/{id} para eliminar un usuario por su ID.
-    @ResponseStatus(HttpStatus.NO_CONTENT) // Devuelve HTTP 204 cuando la eliminación fue correcta.
-    public void eliminarUsuario(@PathVariable Integer id) { // @PathVariable obtiene el ID desde la URL.
-        usuarioService.eliminarUsuario(id); // Envía el ID al Service para eliminar el usuario.
+    @DeleteMapping("/{id}") // DELETE /api/usuarios/{id}.
+    @ResponseStatus(HttpStatus.NO_CONTENT) // Devuelve HTTP 204.
+    public void eliminarUsuario(@PathVariable Integer id,
+            Authentication authentication) {
+        permisoService.exigirPermiso(authentication, "USUARIO_GESTIONAR"); // Valida autorización.
+
+        Integer idAutenticado;
+        try {
+            idAutenticado = Integer.valueOf(authentication.getName()); // Obtiene ID del JWT.
+        } catch (NumberFormatException | NullPointerException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED, "Token inválido.");
+        }
+
+        if (id.equals(idAutenticado)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "No puedes desactivar tu propia cuenta."); // Evita perder el acceso.
+        }
+
+        usuarioService.eliminarUsuario(id); // Desactiva sin borrar el historial.
     }
 
-    private UsuarioResponseDTO convertirADTO(Usuario usuario) { // Convierte la entidad Usuario en una respuesta segura.
+    private UsuarioResponseDTO convertirADTO(Usuario usuario) {
         UsuarioResponseDTO dto = new UsuarioResponseDTO();
 
         dto.setIdUsuario(usuario.getIdUsuario());
@@ -69,11 +95,11 @@ public class UsuarioController {
         dto.setNombreApellido(usuario.getNombreApellido());
         dto.setCorreo(usuario.getCorreo());
         dto.setTelefono(usuario.getTelefono());
-        dto.setTokenFcm(usuario.getTokenFcm());
-        dto.setFraseActivacion(usuario.getFraseActivacion());
+        dto.setTokenFcm(null); // No expone el identificador del dispositivo.
+        dto.setFraseActivacion(null); // No expone información de activación por voz.
         dto.setVozActiva(usuario.getVozActiva());
         dto.setEstado(usuario.getEstado());
 
-        return dto;
+        return dto; // Nunca devuelve passwordHash.
     }
 }
