@@ -233,6 +233,14 @@ public class AlertaService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<AlertaResponseDTO> listarAlertasDeMiRed(Authentication authentication) {
+        Integer idAsistente = redApoyoAutorizacionService.obtenerIdAsistenteActivo(authentication);
+        return alertaRepository.buscarAlertasDeMiRed(idAsistente).stream()
+                .map(this::convertirAlertaDTO)
+                .toList();
+    }
+
     // Consulta las alertas de un adulto mayor vinculado.
     @Transactional(readOnly = true)
     public List<AlertaResponseDTO> listarAlertasAdultoMayor(

@@ -27,6 +27,34 @@ public class RedApoyoAutorizacionService {
     public void validarAccesoAsistente(Integer idAdultoMayor,
             Authentication authentication) {
 
+        Integer idAsistente = obtenerIdAsistenteActivo(authentication);
+
+        // Comprueba que el adulto mayor exista y tenga su cuenta activa.
+        Usuario adulto = usuarioRepository.findById(idAdultoMayor)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Acceso no autorizado."));
+
+        if (!Boolean.TRUE.equals(adulto.getEstado())
+                || adulto.getRol() == null
+                || !Boolean.TRUE.equals(adulto.getRol().getEstado())
+                || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso no autorizado.");
+        }
+
+        // Solo autoriza relaciones activas entre ambos usuarios.
+        boolean vinculado = redApoyoRepository
+                .existsByAdultoMayor_IdUsuarioAndIntegrante_IdUsuarioAndEstadoTrue(
+                        idAdultoMayor, idAsistente);
+
+        if (!vinculado) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "No tienes una vinculación activa con este adulto mayor.");
+        }
+    }
+
+    // Comparte la validación de identidad entre ambas consultas del asistente.
+    @Transactional(readOnly = true)
+    public Integer obtenerIdAsistenteActivo(Authentication authentication) {
         // Verifica que exista una sesión autenticada.
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Debes iniciar sesión.");
@@ -52,26 +80,6 @@ public class RedApoyoAutorizacionService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso no autorizado.");
         }
 
-        // Comprueba que el adulto mayor exista y tenga su cuenta activa.
-        Usuario adulto = usuarioRepository.findById(idAdultoMayor)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.FORBIDDEN, "Acceso no autorizado."));
-
-        if (!Boolean.TRUE.equals(adulto.getEstado())
-                || adulto.getRol() == null
-                || !Boolean.TRUE.equals(adulto.getRol().getEstado())
-                || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acceso no autorizado.");
-        }
-
-        // Solo autoriza relaciones activas entre ambos usuarios.
-        boolean vinculado = redApoyoRepository
-                .existsByAdultoMayor_IdUsuarioAndIntegrante_IdUsuarioAndEstadoTrue(
-                        idAdultoMayor, idAsistente);
-
-        if (!vinculado) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN, "No tienes una vinculación activa con este adulto mayor.");
-        }
+        return idAsistente;
     }
 }

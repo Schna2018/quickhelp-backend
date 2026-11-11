@@ -46,6 +46,12 @@ public class AlertaController {
         return alertaService.listarAlertas(authentication);
     }
 
+    // El asistente consulta su red sin enviar identificadores desde la app.
+    @GetMapping("/mi-red")
+    public List<AlertaResponseDTO> listarAlertasDeMiRed(Authentication authentication) {
+        return alertaService.listarAlertasDeMiRed(authentication);
+    }
+
     // Consulta las alertas de un adulto mayor vinculado.
     @GetMapping("/adulto-mayor/{idAdultoMayor}")
     public List<AlertaResponseDTO> listarAlertasAdultoMayor(

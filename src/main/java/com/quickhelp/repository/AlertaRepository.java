@@ -15,6 +15,21 @@ public interface AlertaRepository extends JpaRepository<Alerta, Integer> {
     // Obtiene las alertas de un adulto mayor, ordenadas desde la más reciente.
     List<Alerta> findByAdultoMayor_IdUsuarioOrderByFechaCreacionDesc(Integer idAdultoMayor);
 
+    // Limita la consulta a adultos y vinculaciones activos del asistente.
+    @Query("""
+            select a from Alerta a
+            where a.adultoMayor.estado = true
+              and a.adultoMayor.rol.estado = true
+              and a.adultoMayor.rol.codigo = 'ADULTO_MAYOR'
+              and exists (
+                  select r.idRedApoyo from RedApoyo r
+                  where r.adultoMayor = a.adultoMayor
+                    and r.integrante.idUsuario = :idAsistente and r.estado = true
+              )
+            order by a.fechaCreacion desc, a.idAlerta desc
+            """)
+    List<Alerta> buscarAlertasDeMiRed(@Param("idAsistente") Integer idAsistente);
+
     // Obtiene las alertas asignadas a un asistente responsable.
     List<Alerta> findByResponsableAtencion_IdUsuarioOrderByFechaCreacionDesc(Integer idResponsable);
 
