@@ -1,6 +1,6 @@
-
 package com.quickhelp.service;
 
+import com.quickhelp.dto.PersonaVinculadaDTO; // Persona adulta que aparece en la pestaña Personas.
 import com.quickhelp.dto.RedApoyoResponseDTO; // DTO de respuesta.
 import com.quickhelp.entity.RedApoyo; // Entidad de las relaciones de apoyo.
 import com.quickhelp.entity.Usuario; // Entidad del usuario.
@@ -18,12 +18,22 @@ public class RedApoyoService {
 
     private final RedApoyoRepository redApoyoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final RedApoyoAutorizacionService autorizacion;
 
-    // Inyecta los repositorios necesarios.
+    // Inyecta los repositorios y la validación de acceso del asistente.
     public RedApoyoService(RedApoyoRepository redApoyoRepository,
-            UsuarioRepository usuarioRepository) {
+            UsuarioRepository usuarioRepository,
+            RedApoyoAutorizacionService autorizacion) {
         this.redApoyoRepository = redApoyoRepository;
         this.usuarioRepository = usuarioRepository;
+        this.autorizacion = autorizacion;
+    }
+
+    // Consulta las personas adultas vinculadas al asistente que inició sesión.
+    @Transactional(readOnly = true)
+    public List<PersonaVinculadaDTO> listarPersonasVinculadas(Authentication authentication) {
+        Integer idAsistente = autorizacion.obtenerIdAsistenteActivo(authentication);
+        return redApoyoRepository.listarPersonasVinculadas(idAsistente);
     }
 
     @Transactional(readOnly = true) // Consulta sin modificar registros.
@@ -67,7 +77,7 @@ public class RedApoyoService {
                 ))
                 .toList();
     }
-    
+
     @Transactional // Actualiza la relación sin eliminar su historial.
     public void desactivarIntegrante(Integer idRedApoyo, Authentication authentication) {
         // Verifica que exista una sesión autenticada.
@@ -114,7 +124,6 @@ public class RedApoyoService {
         redApoyoRepository.save(relacion); // Conserva el registro en PostgreSQL.
     }
 
-    
     @Transactional // Reactiva una vinculación existente.
     public void reactivarIntegrante(Integer idRedApoyo, Authentication authentication) {
         // Verifica que el usuario haya iniciado sesión.
@@ -170,7 +179,6 @@ public class RedApoyoService {
         redApoyoRepository.save(relacion); // Guarda el cambio en PostgreSQL.
     }
 
-    
     @Transactional // Cambia la prioridad manteniendo un orden único.
     public void cambiarPrioridad(Integer idRedApoyo, Integer nuevaPrioridad,
             Authentication authentication) {
@@ -231,7 +239,4 @@ public class RedApoyoService {
 
         redApoyoRepository.saveAll(relaciones); // Guarda el nuevo orden.
     }
-
-
-
 }

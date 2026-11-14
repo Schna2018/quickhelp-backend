@@ -1,60 +1,63 @@
-
 package com.quickhelp.controller;
 
-import com.quickhelp.dto.RedApoyoResponseDTO; // DTO de respuesta.
+import com.quickhelp.dto.PersonaVinculadaDTO; // Persona adulta vinculada al asistente.
+import com.quickhelp.dto.RedApoyoResponseDTO; // Integrante de la red del adulto mayor.
 import com.quickhelp.service.RedApoyoService; // Servicio de red de apoyo.
-import java.util.List; // Lista de integrantes.
-import org.springframework.security.core.Authentication; // Usuario autenticado.
-import org.springframework.web.bind.annotation.GetMapping; // Endpoint GET.
-import org.springframework.web.bind.annotation.RequestMapping; // Ruta base.
-import org.springframework.web.bind.annotation.RestController; // Controlador REST.
-import org.springframework.http.HttpStatus; // Estados de respuesta HTTP.
-import org.springframework.web.bind.annotation.PatchMapping; // Permite actualizar parcialmente una vinculación.
-import org.springframework.web.bind.annotation.PathVariable; // Obtiene el ID desde la URL.
-import org.springframework.web.bind.annotation.ResponseStatus; // Define el código HTTP de respuesta.
-import org.springframework.web.bind.annotation.RequestParam; // Recibe la nueva prioridad.
-
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/red-apoyo") // Ruta principal de la red de apoyo.
+@RequestMapping("/api/red-apoyo")
 public class RedApoyoController {
 
     private final RedApoyoService redApoyoService;
 
-    // Inyecta el servicio mediante el constructor.
     public RedApoyoController(RedApoyoService redApoyoService) {
         this.redApoyoService = redApoyoService;
     }
 
-    @GetMapping // GET /api/red-apoyo.
+    // GET /api/red-apoyo: el adulto mayor consulta a los integrantes de su red.
+    @GetMapping
     public List<RedApoyoResponseDTO> listarRedApoyo(Authentication authentication) {
-        return redApoyoService.listarRedApoyo(authentication); // Consulta la red del adulto autenticado.
+        return redApoyoService.listarRedApoyo(authentication);
     }
-    
-    // Desactiva una vinculación perteneciente al adulto mayor autenticado.
+
+    // GET /api/red-apoyo/personas: el asistente consulta a las personas que apoya.
+    @GetMapping("/personas")
+    public List<PersonaVinculadaDTO> listarPersonasVinculadas(Authentication authentication) {
+        return redApoyoService.listarPersonasVinculadas(authentication);
+    }
+
+    // Desactiva una vinculación del adulto mayor autenticado.
     @PatchMapping("/{idRedApoyo}/desactivar")
-    @ResponseStatus(HttpStatus.NO_CONTENT) // Responde HTTP 204.
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void desactivarIntegrante(@PathVariable Integer idRedApoyo,
             Authentication authentication) {
         redApoyoService.desactivarIntegrante(idRedApoyo, authentication);
     }
 
-    // Reactiva una vinculación existente del adulto mayor autenticado.
+    // Reactiva una vinculación existente.
     @PatchMapping("/{idRedApoyo}/reactivar")
-    @ResponseStatus(HttpStatus.NO_CONTENT) // Responde HTTP 204.
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reactivarIntegrante(@PathVariable Integer idRedApoyo,
             Authentication authentication) {
         redApoyoService.reactivarIntegrante(idRedApoyo, authentication);
     }
 
-    
-    // Cambia el orden de prioridad de un integrante de la red de apoyo.
+    // Cambia el orden de prioridad de un integrante.
     @PatchMapping("/{idRedApoyo}/prioridad")
-    @ResponseStatus(HttpStatus.NO_CONTENT) // Devuelve HTTP 204.
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cambiarPrioridad(@PathVariable Integer idRedApoyo,
             @RequestParam Integer nuevaPrioridad,
             Authentication authentication) {
         redApoyoService.cambiarPrioridad(idRedApoyo, nuevaPrioridad, authentication);
     }
-
 }

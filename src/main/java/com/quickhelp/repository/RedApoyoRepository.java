@@ -23,4 +23,24 @@ public interface RedApoyoRepository extends JpaRepository<RedApoyo, Integer> {
     boolean existsByAdultoMayor_IdUsuarioAndIntegrante_IdUsuarioAndEstadoTrue(
             Integer idAdultoMayor, Integer idIntegrante);
 
+            // Devuelve una fila por persona adulta con vinculación activa.
+    @Query("""
+            select distinct new com.quickhelp.dto.PersonaVinculadaDTO(
+                adulto.idUsuario, adulto.nombreApellido
+            )
+            from RedApoyo red
+            join red.adultoMayor adulto
+            where red.integrante.idUsuario = :idAsistente
+              and red.estado = true
+              and adulto.estado = true
+              and adulto.rol.estado = true
+              and adulto.rol.codigo = 'ADULTO_MAYOR'
+            order by adulto.nombreApellido, adulto.idUsuario
+            """)
+    List<com.quickhelp.dto.PersonaVinculadaDTO> listarPersonasVinculadas(
+            @Param("idAsistente") Integer idAsistente);
+ 
+
+
+
 }
