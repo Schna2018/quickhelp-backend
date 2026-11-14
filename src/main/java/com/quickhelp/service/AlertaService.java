@@ -1,4 +1,3 @@
-
 package com.quickhelp.service;
 
 import com.quickhelp.dto.AlertaResponseDTO; // Respuesta de emergencias.
@@ -61,7 +60,7 @@ public class AlertaService {
         this.redApoyoAutorizacionService = redApoyoAutorizacionService;
         this.notificacionService = notificacionService;
         this.eventPublisher = eventPublisher;
-        this.auditoriaRepository = auditoriaRepository; // Inyecta auditoría.
+        this.auditoriaRepository = auditoriaRepository;
     }
 
     // Mantiene la compatibilidad con llamadas sin coordenadas GPS.
@@ -70,7 +69,7 @@ public class AlertaService {
         return crearAlerta(authentication, null);
     }
 
-    // Crea una alerta y registra su ubicación cuando está disponible.
+    // Reutiliza una emergencia abierta o crea una nueva.
     @Transactional
     public Integer crearAlerta(
             Authentication authentication,
@@ -78,8 +77,8 @@ public class AlertaService {
 
         Integer idAdulto = obtenerIdAutenticado(authentication);
 
-        // Recupera al usuario que activó la emergencia.
-        Usuario adulto = usuarioRepository.findById(idAdulto)
+        // Coordina las solicitudes del mismo adulto aunque lleguen juntas.
+        Usuario adulto = usuarioRepository.buscarPorIdConBloqueo(idAdulto)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado."));
 
@@ -96,7 +95,25 @@ public class AlertaService {
 
         validarCoordenadas(request); // GPS opcional, pero válido si se envía.
 
-        // Recupera el estado inicial de la emergencia.
+        // Busca la emergencia abierta más reciente.
+        // El método del repositorio debe llevar @Lock(PESSIMISTIC_WRITE).
+        var emergenciaAbierta = alertaRepository
+                .findFirstByAdultoMayor_IdUsuarioAndEstadoActual_CodigoInOrderByFechaCreacionDescIdAlertaDesc(
+                        idAdulto,
+                        List.of("ACTIVA", "EN_ATENCION"));
+
+        if (emergenciaAbierta.isPresent()) {
+            Alerta existente = emergenciaAbierta.get();
+
+            // Agrega la nueva ubicación y conserva las lecturas anteriores.
+            guardarUbicacion(existente, request);
+
+            // Mantiene el estado, la fecha de creación y el responsable.
+            // El mensaje al grupo se incorporará cuando exista el chat backend.
+            return existente.getIdAlerta();
+        }
+
+        // Recupera el estado inicial de la nueva emergencia.
         EstadoAlerta estadoInicial = estadoAlertaRepository.findByCodigo("ACTIVA")
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -112,19 +129,7 @@ public class AlertaService {
         Alerta alertaGuardada = alertaRepository.save(alerta);
 
         // Registra las coordenadas si el teléfono las proporcionó.
-        if (request != null
-                && request.latitud() != null
-                && request.longitud() != null) {
-
-            Ubicacion ubicacion = new Ubicacion();
-            ubicacion.setAlerta(alertaGuardada);
-            ubicacion.setLatitud(request.latitud());
-            ubicacion.setLongitud(request.longitud());
-            ubicacion.setPrecisionMetros(request.precisionMetros());
-            ubicacion.setFechaHora(LocalDateTime.now());
-
-            ubicacionRepository.save(ubicacion);
-        }
+        guardarUbicacion(alertaGuardada, request);
 
         // Registra la creación en el historial.
         HistorialAlerta historial = new HistorialAlerta();
@@ -146,7 +151,7 @@ public class AlertaService {
                 "CREACION_ALERTA",
                 "El adulto mayor activó una emergencia.");
 
-        // Genera las notificaciones de la red de apoyo.
+        // Genera las notificaciones únicamente para una emergencia nueva.
         notificacionService.generarNotificacionesEmergencia(alertaGuardada);
 
         // Publica el evento para procesar las notificaciones tras el commit.
@@ -154,6 +159,28 @@ public class AlertaService {
                 new AlertaCreadaEvent(alertaGuardada.getIdAlerta()));
 
         return alertaGuardada.getIdAlerta();
+    }
+
+    // Agrega una ubicación sin sobrescribir las lecturas anteriores.
+    // Se ejecuta dentro de la transacción de crearAlerta().
+    private void guardarUbicacion(
+            Alerta alerta,
+            CrearAlertaRequestDTO request) {
+
+        if (request == null
+                || request.latitud() == null
+                || request.longitud() == null) {
+            return;
+        }
+
+        Ubicacion ubicacion = new Ubicacion();
+        ubicacion.setAlerta(alerta);
+        ubicacion.setLatitud(request.latitud());
+        ubicacion.setLongitud(request.longitud());
+        ubicacion.setPrecisionMetros(request.precisionMetros());
+        ubicacion.setFechaHora(LocalDateTime.now());
+
+        ubicacionRepository.save(ubicacion);
     }
 
     // Comprueba las coordenadas sin exigir que exista GPS.
@@ -233,10 +260,16 @@ public class AlertaService {
                 .toList();
     }
 
+    // Consulta las alertas de los adultos vinculados al asistente.
     @Transactional(readOnly = true)
-    public List<AlertaResponseDTO> listarAlertasDeMiRed(Authentication authentication) {
-        Integer idAsistente = redApoyoAutorizacionService.obtenerIdAsistenteActivo(authentication);
-        return alertaRepository.buscarAlertasDeMiRed(idAsistente).stream()
+    public List<AlertaResponseDTO> listarAlertasDeMiRed(
+            Authentication authentication) {
+
+        Integer idAsistente = redApoyoAutorizacionService
+                .obtenerIdAsistenteActivo(authentication);
+
+        return alertaRepository.buscarAlertasDeMiRed(idAsistente)
+                .stream()
                 .map(this::convertirAlertaDTO)
                 .toList();
     }
@@ -348,7 +381,8 @@ public class AlertaService {
         }
 
         // Obtiene el estado EN_ATENCION desde PostgreSQL.
-        EstadoAlerta nuevoEstado = estadoAlertaRepository.findByCodigo("EN_ATENCION")
+        EstadoAlerta nuevoEstado = estadoAlertaRepository
+                .findByCodigo("EN_ATENCION")
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.INTERNAL_SERVER_ERROR,
                         "No existe el estado EN_ATENCION."));
@@ -387,7 +421,7 @@ public class AlertaService {
                 "El asistente inició la atención de la emergencia.");
     }
 
-    // Permite al asistente responsable resolver una emergencia.
+    // Conserva la lógica existente de cierre por el asistente responsable.
     @Transactional
     public void resolverAlerta(
             Integer idAlerta,
@@ -430,7 +464,8 @@ public class AlertaService {
         }
 
         // Recupera el estado final desde PostgreSQL.
-        EstadoAlerta estadoResuelta = estadoAlertaRepository.findByCodigo("RESUELTA")
+        EstadoAlerta estadoResuelta = estadoAlertaRepository
+                .findByCodigo("RESUELTA")
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.INTERNAL_SERVER_ERROR,
                         "No existe el estado RESUELTA."));
@@ -509,6 +544,6 @@ public class AlertaService {
         auditoria.setDetalle(detalle); // Descripción del evento.
         auditoria.setFechaHora(LocalDateTime.now()); // Fecha del registro.
 
-        auditoriaRepository.save(auditoria); // Guarda en PostgreSQL.
+        auditoriaRepository.save(auditoria);
     }
 }
