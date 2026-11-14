@@ -69,7 +69,7 @@ public class SecurityConfig {
 
         // Permite el origen utilizado actualmente por ionic serve.
         config.setAllowedOrigins(List.of("http://localhost:8100"));
-
+         config.setAllowedOrigins(List.of("http://localhost:4200"));
         // Métodos permitidos; las reglas de autorización anteriores siguen aplicándose.
         config.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
