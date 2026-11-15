@@ -42,7 +42,7 @@ public class SecurityConfig {
                         .denyAll()
                         // Solo administradores pueden consultar todas las redes de apoyo.
                          .requestMatchers(HttpMethod.GET, "/api/administracion/red-apoyo")
-                         .hasRole("ADMINISTRADOR")
+                         .hasRole("ADMIN")
 
                          // Bloquea otros métodos sobre el módulo administrativo de red de apoyo.
                           .requestMatchers("/api/administracion/red-apoyo", "/api/administracion/red-apoyo/**")
