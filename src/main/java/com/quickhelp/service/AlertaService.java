@@ -231,6 +231,34 @@ public class AlertaService {
         }
     }
 
+    // Consulta todas las emergencias para el portal administrativo.
+    @Transactional(readOnly = true)
+    public List<AlertaResponseDTO> listarAlertasAdministracion(
+            Authentication authentication) {
+
+        Integer idUsuario = obtenerIdAutenticado(authentication); // Identifica al solicitante.
+
+        Usuario administrador = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+
+        // Verifica que el administrador y su rol estén activos.
+        if (!Boolean.TRUE.equals(administrador.getEstado())
+                || administrador.getRol() == null
+                || !Boolean.TRUE.equals(administrador.getRol().getEstado())
+                || !"ADMIN".equals(administrador.getRol().getCodigo())) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Acceso exclusivo para administradores.");
+        }
+
+        // Recupera las emergencias reales desde PostgreSQL.
+        return alertaRepository.findAllByOrderByFechaCreacionDesc()
+                .stream()
+                .map(this::convertirAlertaDTO)
+                .toList();
+    }
+
     // Consulta las alertas del adulto mayor autenticado.
     @Transactional(readOnly = true)
     public List<AlertaResponseDTO> listarAlertas(
