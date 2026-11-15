@@ -40,6 +40,13 @@ public class SecurityConfig {
                         // Bloquea otros métodos no autorizados en este módulo.
                         .requestMatchers("/api/parametros", "/api/parametros/**")
                         .denyAll()
+                        // Solo administradores pueden consultar todas las redes de apoyo.
+                         .requestMatchers(HttpMethod.GET, "/api/administracion/red-apoyo")
+                         .hasRole("ADMINISTRADOR")
+
+                         // Bloquea otros métodos sobre el módulo administrativo de red de apoyo.
+                          .requestMatchers("/api/administracion/red-apoyo", "/api/administracion/red-apoyo/**")
+                          .denyAll()
 
                         // Los demás endpoints requieren JWT.
                         .anyRequest().authenticated()
