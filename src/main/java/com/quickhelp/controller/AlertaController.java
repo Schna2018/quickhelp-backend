@@ -40,6 +40,14 @@ public class AlertaController {
         return Map.of("idAlerta", idAlerta);
     }
 
+    // Consulta todas las emergencias para el portal administrativo.
+    @GetMapping("/administracion")
+    public List<AlertaResponseDTO> listarAlertasAdministracion(
+            Authentication authentication) {
+
+        return alertaService.listarAlertasAdministracion(authentication);
+    }
+
     // Consulta las alertas del adulto mayor autenticado.
     @GetMapping
     public List<AlertaResponseDTO> listarAlertas(Authentication authentication) {
