@@ -18,9 +18,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Permite peticiones desde Ionic.
+                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Permite conexiones autorizadas.
                 .csrf(csrf -> csrf.disable()) // API sin sesiones basadas en cookies.
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
@@ -40,21 +41,25 @@ public class SecurityConfig {
                         // Bloquea otros métodos no autorizados en este módulo.
                         .requestMatchers("/api/parametros", "/api/parametros/**")
                         .denyAll()
-                        // Solo administradores pueden consultar todas las redes de apoyo.
-                         .requestMatchers(HttpMethod.GET, "/api/administracion/red-apoyo")
-                         .hasRole("ADMIN")
 
-                         // Bloquea otros métodos sobre el módulo administrativo de red de apoyo.
-                          .requestMatchers("/api/administracion/red-apoyo", "/api/administracion/red-apoyo/**")
-                          .denyAll()
+                        // Solo administradores pueden consultar todas las redes de apoyo.
+                        .requestMatchers(HttpMethod.GET, "/api/administracion/red-apoyo")
+                        .hasRole("ADMIN")
+
+                        // Bloquea otras operaciones sobre este módulo administrativo.
+                        .requestMatchers(
+                                "/api/administracion/red-apoyo",
+                                "/api/administracion/red-apoyo/**"
+                        ).denyAll()
 
                         // Los demás endpoints requieren JWT.
                         .anyRequest().authenticated()
                 )
 
                 // Valida los JWT y convierte sus roles en autoridades Spring.
-                .oauth2ResourceServer(
-                        oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                .oauth2ResourceServer(oauth2 ->
+                        oauth2.jwt(jwt ->
+                                jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
         return http.build();
     }
@@ -74,10 +79,13 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Permite el origen utilizado actualmente por ionic serve.
-        config.setAllowedOrigins(List.of("http://localhost:8100"));
-         config.setAllowedOrigins(List.of("http://localhost:4200"));
-        // Métodos permitidos; las reglas de autorización anteriores siguen aplicándose.
+        // Permite las conexiones de Ionic y del portal web durante el desarrollo.
+        config.setAllowedOrigins(List.of(
+                "http://localhost:8100",
+                "http://localhost:4200"
+        ));
+
+        // Las reglas de autorización anteriores siguen aplicándose.
         config.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
         ));
