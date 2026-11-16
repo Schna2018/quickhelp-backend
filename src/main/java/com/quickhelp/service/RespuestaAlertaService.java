@@ -1,7 +1,7 @@
-
 package com.quickhelp.service;
 
 import com.quickhelp.dto.RespuestaAlertaRequestDTO; // Datos enviados desde la app móvil.
+import com.quickhelp.dto.RespuestaAlertaResponseDTO; // Datos de salida.
 import com.quickhelp.entity.Alerta; // Emergencia que recibe la respuesta.
 import com.quickhelp.entity.RespuestaAlerta; // Registro de respuesta.
 import com.quickhelp.entity.Usuario; // Asistente autenticado.
@@ -14,10 +14,8 @@ import org.springframework.stereotype.Service; // Servicio Spring.
 import org.springframework.transaction.annotation.Transactional; // Transacciones.
 import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 import java.time.LocalDateTime; // Fecha y hora de respuesta.
-import java.util.Set; // Conjunto de respuestas permitidas.
-import com.quickhelp.dto.RespuestaAlertaResponseDTO; // Datos de salida.
 import java.util.List; // Lista de respuestas.
-
+import java.util.Set; // Conjunto de respuestas permitidas.
 
 @Service
 public class RespuestaAlertaService {
@@ -134,7 +132,6 @@ public class RespuestaAlertaService {
         return respuestaAlertaRepository.save(respuesta).getIdRespuesta();
     }
 
-    
     @Transactional(readOnly = true) // Consulta sin modificar registros.
     public List<RespuestaAlertaResponseDTO> listarRespuestas(
             Integer idAlerta, Authentication authentication) {
@@ -178,7 +175,7 @@ public class RespuestaAlertaService {
                     idAdultoMayor, authentication);
         }
 
-        // Convierte los registros de PostgreSQL en DTO de respuesta.
+        // Incluye el nombre de quien respondió para mostrarlo en el chat.
         return respuestaAlertaRepository
                 .findByAlerta_IdAlertaOrderByFechaHoraDesc(idAlerta)
                 .stream()
@@ -186,13 +183,14 @@ public class RespuestaAlertaService {
                         respuesta.getIdRespuesta(),
                         respuesta.getAlerta().getIdAlerta(),
                         respuesta.getIntegrante().getIdUsuario(),
+                        respuesta.getIntegrante().getNombreApellido(),
                         respuesta.getTipoRespuesta(),
                         respuesta.getObservacion(),
                         respuesta.getFechaHora()
                 ))
                 .toList();
     }
-    
+
     @Transactional // Actualiza la respuesta dentro de una transacción.
     public void actualizarRespuesta(
             Integer idAlerta,
@@ -269,6 +267,4 @@ public class RespuestaAlertaService {
 
         respuestaAlertaRepository.save(respuesta); // Persiste la actualización.
     }
-
-
 }

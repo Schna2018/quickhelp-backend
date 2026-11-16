@@ -1,4 +1,3 @@
-
 package com.quickhelp.dto;
 
 import java.time.LocalDateTime; // Fecha y hora de la respuesta.
@@ -8,7 +7,9 @@ public record RespuestaAlertaResponseDTO(
         Integer idRespuesta, // Identificador de la respuesta.
         Integer idAlerta, // Emergencia asociada.
         Integer idIntegrante, // Asistente que respondió.
+        String nombreIntegrante, // Nombre de la persona que verá el chat.
         String tipoRespuesta, // Opción seleccionada.
         String observacion, // Mensaje adicional.
         LocalDateTime fechaHora // Momento de la respuesta.
-) {}
+) {
+}
