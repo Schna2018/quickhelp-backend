@@ -58,4 +58,12 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("estado") String estado,
             @Param("fechaEnvio") LocalDateTime fechaEnvio,
             @Param("resultado") String resultado);
+
+    // Comprueba si existe un aviso para el mismo contacto y fecha programada.
+    // Se utilizará para controlar los reavisos del escalamiento automático.
+    boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
+            Integer idAlerta,
+            Integer idDestinatario,
+            String canal,
+            LocalDateTime fechaProgramada);
 }
