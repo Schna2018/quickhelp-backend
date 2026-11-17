@@ -169,6 +169,18 @@ public class ParametroSistemaService {
                 }
                 break;
 
+            // Intervalo de actualización de emergencias.
+            case "INTERVALO_ACTUALIZACION":
+                if (!"15".equals(valor)
+                        && !"30".equals(valor)
+                        && !"60".equals(valor)
+                        && !"120".equals(valor)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "El intervalo debe ser 15, 30, 60 o 120 segundos.");
+                }
+                break;
+
             // Rechaza parámetros no autorizados.
             default:
                 throw new ResponseStatusException(
