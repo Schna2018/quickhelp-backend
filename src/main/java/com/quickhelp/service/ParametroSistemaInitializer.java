@@ -33,6 +33,10 @@ public class ParametroSistemaInitializer implements ApplicationRunner {
 
         crearSiNoExiste("TELEFONO_EMERGENCIA", "Por definir",
                 "STRING", "Teléfono institucional de emergencia pendiente.");
+
+        // Nueva preferencia: notificaciones por correo.
+        crearSiNoExiste("NOTIFICACIONES_CORREO_HABILITADAS", "false",
+                "BOOLEAN", "Permite habilitar las notificaciones por correo.");
     }
 
     // Conserva cualquier valor previamente registrado.
