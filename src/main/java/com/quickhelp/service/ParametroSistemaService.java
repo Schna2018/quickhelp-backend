@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service; // Servicio Spring.
 import org.springframework.transaction.annotation.Transactional; // Transacciones.
 import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 
-@Service // Administra las configuraciones de QuickHelp.
+@Service // Administra las configuraciones de Quick Help.
 public class ParametroSistemaService {
 
     private final ParametroSistemaRepository parametroRepository;
@@ -97,6 +97,7 @@ public class ParametroSistemaService {
                             HttpStatus.BAD_REQUEST, "Se requiere un número entero.");
                 }
                 break;
+
             case "BOOLEAN":
                 if (!"true".equalsIgnoreCase(valor)
                         && !"false".equalsIgnoreCase(valor)) {
@@ -104,21 +105,23 @@ public class ParametroSistemaService {
                             HttpStatus.BAD_REQUEST, "Se requiere true o false.");
                 }
                 break;
+
             case "STRING":
                 break;
+
             default:
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST, "Tipo de dato no admitido.");
         }
     }
 
-    
-    
-   
-    // Permite modificar únicamente parámetros reconocidos por QuickHelp.
+    // Permite modificar únicamente parámetros reconocidos por Quick Help.
     private void validarReglasParametro(String clave, String valor) {
         switch (clave) {
+
+            // Notificaciones generales y por correo.
             case "NOTIFICACIONES_HABILITADAS":
+            case "NOTIFICACIONES_CORREO_HABILITADAS":
                 if (!"true".equalsIgnoreCase(valor)
                         && !"false".equalsIgnoreCase(valor)) {
                     throw new ResponseStatusException(
@@ -164,13 +167,13 @@ public class ParametroSistemaService {
                 }
                 break;
 
+            // Rechaza parámetros no autorizados.
             default:
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         "Este parámetro no está habilitado para modificación.");
         }
     }
-
 
     // Comprueba que el usuario autenticado sea administrador activo.
     private Usuario validarAdministrador(Authentication authentication) {
