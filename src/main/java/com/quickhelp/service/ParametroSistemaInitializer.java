@@ -38,6 +38,9 @@ public class ParametroSistemaInitializer implements ApplicationRunner {
         crearSiNoExiste("NOTIFICACIONES_CORREO_HABILITADAS", "false",
                 "BOOLEAN", "Permite habilitar las notificaciones por correo.");
     }
+    // Preferencia de notificaciones del navegador.
+crearSiNoExiste("NOTIFICACIONES_NAVEGADOR_HABILITADAS", "false",
+        "BOOLEAN", "Permite habilitar las notificaciones del navegador.");
 
     // Conserva cualquier valor previamente registrado.
     private void crearSiNoExiste(String clave, String valor,
