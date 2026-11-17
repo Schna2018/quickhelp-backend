@@ -154,7 +154,7 @@ public class ParametroSistemaService {
         if (!Boolean.TRUE.equals(usuario.getEstado())
                 || usuario.getRol() == null
                 || !Boolean.TRUE.equals(usuario.getRol().getEstado())
-                || !"ADMINISTRADOR".equals(usuario.getRol().getCodigo())) {
+                || !"ADMIN".equals(usuario.getRol().getCodigo())) {
 
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
