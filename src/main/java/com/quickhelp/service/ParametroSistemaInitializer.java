@@ -22,25 +22,33 @@ public class ParametroSistemaInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        // Nombre visible del sistema.
         crearSiNoExiste("NOMBRE_SISTEMA", "Quick Help",
                 "STRING", "Nombre visible del sistema.");
 
+        // Institución responsable.
         crearSiNoExiste("NOMBRE_INSTITUCION", "Por definir",
                 "STRING", "Institución responsable.");
 
+        // Correo institucional de soporte.
         crearSiNoExiste("CORREO_SOPORTE", "Por definir",
                 "STRING", "Correo institucional de soporte pendiente.");
 
+        // Teléfono de contacto para emergencias.
         crearSiNoExiste("TELEFONO_EMERGENCIA", "Por definir",
                 "STRING", "Teléfono institucional de emergencia pendiente.");
 
-        // Nueva preferencia: notificaciones por correo.
+        // Preferencia de notificaciones por correo.
         crearSiNoExiste("NOTIFICACIONES_CORREO_HABILITADAS", "false",
                 "BOOLEAN", "Permite habilitar las notificaciones por correo.");
 
         // Preferencia de notificaciones del navegador.
         crearSiNoExiste("NOTIFICACIONES_NAVEGADOR_HABILITADAS", "false",
                 "BOOLEAN", "Permite habilitar las notificaciones del navegador.");
+
+        // Preferencia de alertas sonoras.
+        crearSiNoExiste("ALERTAS_SONORAS_HABILITADAS", "false",
+                "BOOLEAN", "Permite habilitar las alertas sonoras del portal.");
     }
 
     // Conserva cualquier valor previamente registrado.
