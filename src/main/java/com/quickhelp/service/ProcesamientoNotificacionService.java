@@ -5,19 +5,17 @@ import com.google.firebase.messaging.FirebaseMessagingException; // Errores de F
 import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
 import com.quickhelp.repository.NotificacionRepository; // Repositorio existente.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
-//import org.springframework.transaction.annotation.Transactional; // Control de transacciones.
 import java.time.LocalDateTime; // Fecha y hora del envío.
 import java.util.List; // Colección de notificaciones.
 
-@Service // Registra el servicio en Spring Boot.
+@Service
 public class ProcesamientoNotificacionService {
 
     private final NotificacionRepository notificacionRepository;
     private final FirebaseMessagingService firebaseMessagingService;
-    private final NotificacionFinalizacionService notificacionFinalizacionService; // Guarda el resultado del envío.
-    private final NotificacionReservaService notificacionReservaService; // Reserva los envíos.
+    private final NotificacionFinalizacionService notificacionFinalizacionService;
+    private final NotificacionReservaService notificacionReservaService;
 
-    // Inyecta los servicios necesarios para procesar las notificaciones.
     public ProcesamientoNotificacionService(
             NotificacionRepository notificacionRepository,
             FirebaseMessagingService firebaseMessagingService,
@@ -29,45 +27,51 @@ public class ProcesamientoNotificacionService {
         this.notificacionFinalizacionService = notificacionFinalizacionService;
     }
 
-    // Procesa únicamente las notificaciones pendientes de una alerta.
+    // Procesa las notificaciones pendientes de una alerta específica.
     public void procesarPendientes(Integer idAlerta) {
 
-        // Consulta las notificaciones asociadas a la emergencia.
         List<Notificacion> notificaciones = notificacionRepository
                 .findByAlerta_IdAlertaOrderByIdNotificacionDesc(idAlerta);
 
         for (Notificacion notificacion : notificaciones) {
 
-            // Reserva la notificación antes de enviarla.
-            if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
-                continue; // Otro proceso la reservó o ya fue procesada.
+            // Omite las notificaciones que no están pendientes.
+            if (!"PENDIENTE".equals(notificacion.getEstadoEnvio())) {
+                continue;
             }
 
-            String estado = "ERROR"; // Estado inicial ante un fallo.
+            // Evita enviar notificaciones antes de su fecha programada.
+            if (notificacion.getFechaProgramada() != null
+                    && notificacion.getFechaProgramada().isAfter(LocalDateTime.now())) {
+                continue;
+            }
+
+            // Reserva el envío para evitar procesarlo simultáneamente.
+            if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
+                continue;
+            }
+
+            String estado = "ERROR";
             String resultado;
 
             try {
-                // Obtiene el token del asistente destinatario.
                 String tokenFcm = notificacion.getDestinatario().getTokenFcm();
 
                 resultado = firebaseMessagingService.enviarNotificacion(
                         tokenFcm,
-                        idAlerta, // Utiliza el ID recibido, sin cargar nuevamente la alerta.
+                        idAlerta,
                         "¡Alerta de emergencia!",
                         "Un integrante de tu red de apoyo necesita asistencia.");
 
-                estado = "ENVIADA"; // Firebase aceptó el mensaje.
+                estado = "ENVIADA";
 
-          
             } catch (FirebaseMessagingException | RuntimeException e) {
-                // Registra los errores de Firebase y otros fallos de ejecución.
                 resultado = e.getMessage() != null
                         ? e.getMessage()
                         : e.getClass().getSimpleName();
             }
 
-
-            // Guarda el resultado sin sobrescribir numero_intento.
+            // Registra el resultado del intento en PostgreSQL.
             boolean finalizada = notificacionFinalizacionService.finalizar(
                     notificacion.getIdNotificacion(),
                     estado,
@@ -76,8 +80,21 @@ public class ProcesamientoNotificacionService {
 
             if (!finalizada) {
                 throw new IllegalStateException(
-                        "No se pudo finalizar la notificación " + notificacion.getIdNotificacion());
+                        "No se pudo finalizar la notificación "
+                                + notificacion.getIdNotificacion());
             }
+        }
+    }
+
+    // Procesa las notificaciones pendientes cuya fecha programada ya se cumplió.
+    // Se utilizará para ejecutar los reavisos automáticos.
+    public void procesarPendientesProgramadas() {
+
+        List<Notificacion> notificaciones = notificacionRepository
+                .buscarPendientesProgramadas(LocalDateTime.now());
+
+        for (Notificacion notificacion : notificaciones) {
+            procesarPendientes(notificacion.getAlerta().getIdAlerta());
         }
     }
 }
