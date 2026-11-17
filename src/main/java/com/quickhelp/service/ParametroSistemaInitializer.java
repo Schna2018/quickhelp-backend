@@ -53,6 +53,10 @@ public class ParametroSistemaInitializer implements ApplicationRunner {
         // Intervalo de actualización de emergencias.
         crearSiNoExiste("INTERVALO_ACTUALIZACION", "30",
                 "INTEGER", "Intervalo de actualización de emergencias en segundos.");
+
+        // Prioridad utilizada cuando una solicitud no tiene prioridad asignada.
+        crearSiNoExiste("PRIORIDAD_PREDETERMINADA", "ALTA",
+                "STRING", "Prioridad predeterminada para solicitudes sin prioridad asignada.");
     }
 
     // Conserva cualquier valor previamente registrado.
