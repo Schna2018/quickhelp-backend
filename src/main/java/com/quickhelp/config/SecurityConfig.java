@@ -79,10 +79,12 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Permite las conexiones de Ionic y del portal web durante el desarrollo.
+        // Permite los orígenes web y los orígenes predeterminados de Capacitor.
         config.setAllowedOrigins(List.of(
-                "http://localhost:8100",
-                "http://localhost:4200"
+                "http://localhost:8100", // Ionic en el navegador durante el desarrollo.
+                "http://localhost:4200", // Portal web durante el desarrollo.
+                "https://localhost", // Aplicación Android con Capacitor.
+                "capacitor://localhost" // Aplicación iOS con Capacitor.
         ));
 
         // Las reglas de autorización anteriores siguen aplicándose.
