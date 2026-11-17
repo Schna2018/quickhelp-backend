@@ -1,3 +1,4 @@
+
 package com.quickhelp.repository;
 
 import com.quickhelp.entity.Usuario; // Entidad que representa un usuario.
@@ -6,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository; // Operaciones CRU
 import org.springframework.data.jpa.repository.Lock; // Permite bloquear un registro.
 import org.springframework.data.jpa.repository.Query; // Consultas JPQL.
 import org.springframework.data.repository.query.Param; // Parámetros de consultas.
+import java.util.List; // Permite devolver listas de usuarios.
 import java.util.Optional; // Permite devolver resultados opcionales.
 
 public interface UsuarioRepository extends JpaRepository<Usuario, Integer> {
@@ -27,6 +29,10 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Integer> {
 
     // Cuenta los usuarios activos que pertenecen a un rol específico.
     long countByRol_CodigoAndEstadoTrue(String codigoRol);
+
+    // Obtiene los usuarios activos de un rol para enviar notificaciones.
+    // Se utilizará para identificar administradores en el escalamiento SOS.
+    List<Usuario> findByRol_CodigoAndEstadoTrue(String codigoRol);
 
     // Coordina la creación de emergencias del mismo adulto.
     // Debe utilizarse dentro de una transacción del servicio.
