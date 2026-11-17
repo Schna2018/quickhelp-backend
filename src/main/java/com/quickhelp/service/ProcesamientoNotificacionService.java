@@ -50,7 +50,7 @@ public class ProcesamientoNotificacionService {
                 continue;
             }
 
-            // No envía reavisos cuando la alerta ya no está activa.
+            // No envía notificaciones cuando la alerta ya no está activa.
             if (!alertaActiva(idAlerta)) {
                 continue;
             }
@@ -64,10 +64,9 @@ public class ProcesamientoNotificacionService {
             String resultado;
 
             try {
-                // Vuelve a comprobar el estado antes de llamar a Firebase.
+                // Comprueba nuevamente el estado antes del envío.
                 if (!alertaActiva(idAlerta)) {
-                    estado = "CANCELADA";
-                    resultado = "Notificación omitida: la alerta ya no está activa.";
+                    resultado = "Envío omitido: la alerta ya no está activa.";
                 } else {
                     String tokenFcm = notificacion.getDestinatario().getTokenFcm();
 
