@@ -119,17 +119,19 @@ public class ParametroSistemaService {
     private void validarReglasParametro(String clave, String valor) {
         switch (clave) {
 
-            // Notificaciones generales, por correo y del navegador.
-case "NOTIFICACIONES_HABILITADAS":
-case "NOTIFICACIONES_CORREO_HABILITADAS":
-case "NOTIFICACIONES_NAVEGADOR_HABILITADAS":
-    if (!"true".equalsIgnoreCase(valor)
-            && !"false".equalsIgnoreCase(valor)) {
-        throw new ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "El valor debe ser true o false.");
-    }
-    break;
+            // Notificaciones generales, por correo, navegador y alertas sonoras.
+            case "NOTIFICACIONES_HABILITADAS":
+            case "NOTIFICACIONES_CORREO_HABILITADAS":
+            case "NOTIFICACIONES_NAVEGADOR_HABILITADAS":
+            case "ALERTAS_SONORAS_HABILITADAS":
+                if (!"true".equalsIgnoreCase(valor)
+                        && !"false".equalsIgnoreCase(valor)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "El valor debe ser true o false.");
+                }
+                break;
+
             // Nombre visible del sistema.
             case "NOMBRE_SISTEMA":
                 if (valor.length() > 100) {
