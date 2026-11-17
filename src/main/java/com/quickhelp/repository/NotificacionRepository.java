@@ -18,10 +18,12 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
 
     // Carga el destinatario y su token FCM junto con cada notificación.
     @EntityGraph(attributePaths = {"destinatario"})
-    List<Notificacion> findByAlerta_IdAlertaOrderByIdNotificacionDesc(Integer idAlerta);
+    List<Notificacion> findByAlerta_IdAlertaOrderByIdNotificacionDesc(
+            Integer idAlerta);
 
     // Obtiene las notificaciones según su estado de envío.
-    List<Notificacion> findByEstadoEnvioOrderByIdNotificacionAsc(String estadoEnvio);
+    List<Notificacion> findByEstadoEnvioOrderByIdNotificacionAsc(
+            String estadoEnvio);
 
     // Consulta las notificaciones de un destinatario según su estado.
     List<Notificacion> findByDestinatario_IdUsuarioAndEstadoEnvioOrderByIdNotificacionDesc(
@@ -41,7 +43,8 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'PENDIENTE'
             """)
-    int reservarNotificacion(@Param("idNotificacion") Integer idNotificacion);
+    int reservarNotificacion(
+            @Param("idNotificacion") Integer idNotificacion);
 
     // Guarda el resultado únicamente si la notificación continúa reservada.
     @Modifying
@@ -66,4 +69,16 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             Integer idDestinatario,
             String canal,
             LocalDateTime fechaProgramada);
+
+    // Consulta las notificaciones pendientes cuya fecha programada ya se cumplió.
+    // Permite procesar los reavisos sin enviarlos antes de tiempo.
+    @EntityGraph(attributePaths = {"destinatario", "alerta"})
+    @Query("""
+            SELECT n FROM Notificacion n
+            WHERE n.estadoEnvio = 'PENDIENTE'
+              AND n.fechaProgramada <= :ahora
+            ORDER BY n.fechaProgramada ASC, n.idNotificacion ASC
+            """)
+    List<Notificacion> buscarPendientesProgramadas(
+            @Param("ahora") LocalDateTime ahora);
 }
