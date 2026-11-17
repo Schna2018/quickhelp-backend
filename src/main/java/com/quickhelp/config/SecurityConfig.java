@@ -32,11 +32,11 @@ public class SecurityConfig {
 
                         // Solo administradores pueden consultar configuraciones.
                         .requestMatchers(HttpMethod.GET, "/api/parametros", "/api/parametros/**")
-                        .hasRole("ADMINISTRADOR")
+                        .hasRole("ADMIN")
 
                         // Solo administradores pueden modificar configuraciones.
                         .requestMatchers(HttpMethod.PATCH, "/api/parametros/**")
-                        .hasRole("ADMINISTRADOR")
+                        .hasRole("ADMIN")
 
                         // Bloquea otros métodos no autorizados en este módulo.
                         .requestMatchers("/api/parametros", "/api/parametros/**")
