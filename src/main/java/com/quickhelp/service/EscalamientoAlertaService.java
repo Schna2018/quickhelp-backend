@@ -4,9 +4,11 @@ package com.quickhelp.service;
 import com.quickhelp.entity.Alerta; // Entidad de alertas.
 import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
 import com.quickhelp.entity.RedApoyo; // Integrantes de la red de apoyo.
+import com.quickhelp.entity.Usuario; // Usuarios administradores.
 import com.quickhelp.repository.AlertaRepository; // Consulta de alertas.
 import com.quickhelp.repository.NotificacionRepository; // Registro de reavisos.
 import com.quickhelp.repository.RedApoyoRepository; // Consulta de prioridades.
+import com.quickhelp.repository.UsuarioRepository; // Consulta de administradores.
 import org.springframework.scheduling.annotation.Scheduled; // Tareas automáticas.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
 import org.springframework.transaction.PlatformTransactionManager; // Transacciones.
@@ -18,10 +20,12 @@ import java.util.List; // Colecciones.
 public class EscalamientoAlertaService {
 
     private static final long INTERVALO_MINUTOS = 2;
+    private static final String CODIGO_ADMIN = "ADMIN";
 
     private final AlertaRepository alertaRepository;
     private final RedApoyoRepository redApoyoRepository;
     private final NotificacionRepository notificacionRepository;
+    private final UsuarioRepository usuarioRepository;
     private final ProcesamientoNotificacionService procesamientoNotificacionService;
     private final TransactionTemplate transactionTemplate;
 
@@ -29,11 +33,13 @@ public class EscalamientoAlertaService {
             AlertaRepository alertaRepository,
             RedApoyoRepository redApoyoRepository,
             NotificacionRepository notificacionRepository,
+            UsuarioRepository usuarioRepository,
             ProcesamientoNotificacionService procesamientoNotificacionService,
             PlatformTransactionManager transactionManager) {
         this.alertaRepository = alertaRepository;
         this.redApoyoRepository = redApoyoRepository;
         this.notificacionRepository = notificacionRepository;
+        this.usuarioRepository = usuarioRepository;
         this.procesamientoNotificacionService = procesamientoNotificacionService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -49,15 +55,15 @@ public class EscalamientoAlertaService {
 
             // Cada alerta se procesa dentro de una transacción independiente.
             transactionTemplate.executeWithoutResult(status ->
-                    generarReavisos(alerta.getIdAlerta()));
+                    generarEscalamiento(alerta.getIdAlerta()));
         }
 
         // Procesa los envíos después de confirmar los registros.
         procesamientoNotificacionService.procesarPendientesProgramadas();
     }
 
-    // Registra los reavisos según el orden de prioridad de la red.
-    private void generarReavisos(Integer idAlerta) {
+    // Registra los reavisos y el aviso administrativo según el tiempo transcurrido.
+    private void generarEscalamiento(Integer idAlerta) {
 
         // Bloquea la alerta para evitar registros simultáneos duplicados.
         Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
@@ -67,7 +73,7 @@ public class EscalamientoAlertaService {
             return;
         }
 
-        // Detiene el escalamiento si la alerta ya no está activa.
+        // Detiene el escalamiento cuando la alerta deja de estar activa.
         if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())) {
             return;
         }
@@ -82,45 +88,82 @@ public class EscalamientoAlertaService {
 
         for (RedApoyo integrante : integrantes) {
 
-            // Solo considera integrantes activos.
+            // Considera únicamente integrantes activos.
             if (!Boolean.TRUE.equals(integrante.getEstado())) {
                 continue;
             }
 
             posicion++;
 
-            // Prioridad 1: 2 min; prioridad 2: 4 min; prioridad 3: 6 min.
+            // Genera un reaviso cada dos minutos según el orden de prioridad.
             LocalDateTime fechaReaviso = alerta.getFechaCreacion()
                     .plusMinutes(INTERVALO_MINUTOS * posicion);
 
-            // Todavía no corresponde generar este reaviso.
             if (ahora.isBefore(fechaReaviso)) {
                 continue;
             }
 
-            Integer idDestinatario = integrante.getIntegrante().getIdUsuario();
-
-            // Impide registrar nuevamente el mismo reaviso.
-            boolean existe = notificacionRepository
-                    .existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
-                            idAlerta, idDestinatario, "PUSH", fechaReaviso);
-
-            if (existe) {
-                continue;
-            }
-
-            // Crea un nuevo registro para el reaviso.
-            Notificacion notificacion = new Notificacion();
-            notificacion.setAlerta(alerta);
-            notificacion.setDestinatario(integrante.getIntegrante());
-            notificacion.setNumeroIntento(0);
-            notificacion.setCanal("PUSH");
-            notificacion.setEstadoEnvio("PENDIENTE");
-            notificacion.setFechaProgramada(fechaReaviso);
-            notificacion.setFechaEnvio(null);
-            notificacion.setResultado(null);
-
-            notificacionRepository.save(notificacion);
+            registrarNotificacion(
+                    alerta,
+                    integrante.getIntegrante(),
+                    fechaReaviso,
+                    "PUSH");
         }
+
+        // El administrador recibe el aviso después del último contacto.
+        LocalDateTime fechaAdministrador = alerta.getFechaCreacion()
+                .plusMinutes(INTERVALO_MINUTOS * (posicion + 1));
+
+        if (ahora.isBefore(fechaAdministrador)) {
+            return;
+        }
+
+        // Busca únicamente administradores activos.
+        List<Usuario> administradores = usuarioRepository
+                .findByRol_CodigoAndEstadoTrue(CODIGO_ADMIN);
+
+        for (Usuario administrador : administradores) {
+
+            // Registra un aviso administrativo por destinatario y alerta.
+            registrarNotificacion(
+                    alerta,
+                    administrador,
+                    fechaAdministrador,
+                    "PUSH");
+        }
+    }
+
+    // Registra una notificación evitando duplicados por fecha y destinatario.
+    private void registrarNotificacion(
+            Alerta alerta,
+            Usuario destinatario,
+            LocalDateTime fechaProgramada,
+            String canal) {
+
+        Integer idAlerta = alerta.getIdAlerta();
+        Integer idDestinatario = destinatario.getIdUsuario();
+
+        boolean existe = notificacionRepository
+                .existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
+                        idAlerta,
+                        idDestinatario,
+                        canal,
+                        fechaProgramada);
+
+        if (existe) {
+            return;
+        }
+
+        Notificacion notificacion = new Notificacion();
+        notificacion.setAlerta(alerta);
+        notificacion.setDestinatario(destinatario);
+        notificacion.setNumeroIntento(0);
+        notificacion.setCanal(canal);
+        notificacion.setEstadoEnvio("PENDIENTE");
+        notificacion.setFechaProgramada(fechaProgramada);
+        notificacion.setFechaEnvio(null);
+        notificacion.setResultado(null);
+
+        notificacionRepository.save(notificacion);
     }
 }
