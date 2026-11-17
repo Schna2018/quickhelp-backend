@@ -114,6 +114,7 @@ public class ParametroSistemaService {
 
     
     
+   
     // Permite modificar únicamente parámetros reconocidos por QuickHelp.
     private void validarReglasParametro(String clave, String valor) {
         switch (clave) {
@@ -125,12 +126,51 @@ public class ParametroSistemaService {
                             "El valor debe ser true o false.");
                 }
                 break;
+
+            // Nombre visible del sistema.
+            case "NOMBRE_SISTEMA":
+                if (valor.length() > 100) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "El nombre del sistema no puede superar 100 caracteres.");
+                }
+                break;
+
+            // Institución responsable del sistema.
+            case "NOMBRE_INSTITUCION":
+                if (valor.length() > 150) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "El nombre de la institución no puede superar 150 caracteres.");
+                }
+                break;
+
+            // Correo institucional de soporte.
+            case "CORREO_SOPORTE":
+                if (valor.length() > 254
+                        || !valor.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "Ingresa un correo de soporte válido.");
+                }
+                break;
+
+            // Teléfono de contacto para emergencias.
+            case "TELEFONO_EMERGENCIA":
+                if (!valor.matches("^\\+?[0-9]{8,15}$")) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "Ingresa un teléfono válido de 8 a 15 dígitos.");
+                }
+                break;
+
             default:
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
                         "Este parámetro no está habilitado para modificación.");
         }
     }
+
 
     // Comprueba que el usuario autenticado sea administrador activo.
     private Usuario validarAdministrador(Authentication authentication) {
