@@ -181,6 +181,18 @@ public class ParametroSistemaService {
                 }
                 break;
 
+            // Prioridad predeterminada para solicitudes sin prioridad asignada.
+            case "PRIORIDAD_PREDETERMINADA":
+                if (!"BAJA".equals(valor)
+                        && !"MEDIA".equals(valor)
+                        && !"ALTA".equals(valor)
+                        && !"CRITICA".equals(valor)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "La prioridad debe ser BAJA, MEDIA, ALTA o CRITICA.");
+                }
+                break;
+
             // Rechaza parámetros no autorizados.
             default:
                 throw new ResponseStatusException(
