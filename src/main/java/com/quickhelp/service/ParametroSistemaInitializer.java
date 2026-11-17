@@ -49,6 +49,10 @@ public class ParametroSistemaInitializer implements ApplicationRunner {
         // Preferencia de alertas sonoras.
         crearSiNoExiste("ALERTAS_SONORAS_HABILITADAS", "false",
                 "BOOLEAN", "Permite habilitar las alertas sonoras del portal.");
+
+        // Intervalo de actualización de emergencias.
+        crearSiNoExiste("INTERVALO_ACTUALIZACION", "30",
+                "INTEGER", "Intervalo de actualización de emergencias en segundos.");
     }
 
     // Conserva cualquier valor previamente registrado.
