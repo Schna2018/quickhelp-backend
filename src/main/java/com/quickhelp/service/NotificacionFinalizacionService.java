@@ -1,34 +1,103 @@
 
-package com.quickhelp.service;
+package com.quickhelp.repository;
 
-import com.quickhelp.repository.NotificacionRepository; // Repositorio existente.
-import org.springframework.stereotype.Service; // Servicio Spring Boot.
-import org.springframework.transaction.annotation.Transactional; // Transacciones.
-import java.time.LocalDateTime; // Fecha y hora del envío.
-import org.springframework.transaction.annotation.Propagation; // Define una transacción nueva.
+import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
+import java.time.LocalDateTime; // Manejo de fechas.
+import java.util.List; // Listado de notificaciones.
+import org.springframework.data.jpa.repository.EntityGraph; // Carga relaciones.
+import org.springframework.data.jpa.repository.JpaRepository; // Operaciones CRUD.
+import org.springframework.data.jpa.repository.Modifying; // Consultas de actualización.
+import org.springframework.data.jpa.repository.Query; // Consultas personalizadas.
+import org.springframework.data.repository.query.Param; // Parámetros de consultas.
 
-@Service // Registra el servicio en Spring.
-public class NotificacionFinalizacionService {
+public interface NotificacionRepository extends JpaRepository<Notificacion, Integer> {
 
-    private final NotificacionRepository notificacionRepository;
+    // Obtiene las notificaciones de un destinatario.
+    List<Notificacion> findByDestinatario_IdUsuarioOrderByIdNotificacionDesc(
+            Integer idDestinatario);
 
-    public NotificacionFinalizacionService(NotificacionRepository notificacionRepository) {
-        this.notificacionRepository = notificacionRepository;
-    }
+    // Obtiene las notificaciones asociadas a una alerta.
+    @EntityGraph(attributePaths = {"destinatario"})
+    List<Notificacion> findByAlerta_IdAlertaOrderByIdNotificacionDesc(
+            Integer idAlerta);
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW) // Confirma el resultado en una transacción independiente.
-    public boolean finalizar(Integer idNotificacion, String estado,
-            LocalDateTime fechaEnvio, String resultado) {
+    // Obtiene las notificaciones según su estado.
+    List<Notificacion> findByEstadoEnvioOrderByIdNotificacionAsc(
+            String estadoEnvio);
 
-        // Solo permite estados finales válidos.
-        if (!"ENVIADA".equals(estado) && !"ERROR".equals(estado)) {
-            throw new IllegalArgumentException("Estado de envío inválido.");
-        }
+    // Obtiene las notificaciones de un usuario según su estado.
+    List<Notificacion> findByDestinatario_IdUsuarioAndEstadoEnvioOrderByIdNotificacionDesc(
+            Integer idDestinatario, String estadoEnvio);
 
-        // Actualiza el resultado sin modificar el número de intentos.
-        int actualizados = notificacionRepository.finalizarEnvio(
-                idNotificacion, estado, fechaEnvio, resultado);
+    // Evita duplicar la notificación inicial por canal.
+    boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanal(
+            Integer idAlerta, Integer idDestinatario, String canal);
 
-        return actualizados == 1; // Confirma si se actualizó el registro.
-    }
+    // Evita duplicar un aviso de escalamiento del mismo tipo.
+    boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndTipoAviso(
+            Integer idAlerta, Integer idDestinatario, String canal, String tipoAviso);
+
+    // Reserva una notificación pendiente para procesarla una sola vez.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'EN_PROCESO',
+                n.numeroIntento = n.numeroIntento + 1,
+                n.fechaInicioProceso = CURRENT_TIMESTAMP
+            WHERE n.idNotificacion = :idNotificacion
+              AND n.estadoEnvio = 'PENDIENTE'
+            """)
+    int reservarNotificacion(@Param("idNotificacion") Integer idNotificacion);
+
+    // Registra el resultado del envío de una notificación.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = :estado,
+                n.fechaEnvio = :fechaEnvio,
+                n.resultado = :resultado
+            WHERE n.idNotificacion = :idNotificacion
+              AND n.estadoEnvio = 'EN_PROCESO'
+            """)
+    int finalizarEnvio(
+            @Param("idNotificacion") Integer idNotificacion,
+            @Param("estado") String estado,
+            @Param("fechaEnvio") LocalDateTime fechaEnvio,
+            @Param("resultado") String resultado);
+
+    // Reprograma un envío fallido sin perder el número de intentos.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'PENDIENTE',
+                n.fechaProgramada = :fechaReintento,
+                n.fechaInicioProceso = null,
+                n.resultado = :resultado
+            WHERE n.idNotificacion = :idNotificacion
+              AND n.estadoEnvio = 'EN_PROCESO'
+            """)
+    int reprogramarNotificacion(
+            @Param("idNotificacion") Integer idNotificacion,
+            @Param("fechaReintento") LocalDateTime fechaReintento,
+            @Param("resultado") String resultado);
+
+    // Conserva la consulta anterior por fecha programada.
+    boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
+            Integer idAlerta,
+            Integer idDestinatario,
+            String canal,
+            LocalDateTime fechaProgramada);
+
+    // Busca notificaciones pendientes de alertas activas.
+    @EntityGraph(attributePaths = {"destinatario", "alerta", "alerta.estadoActual"})
+    @Query("""
+            SELECT n
+            FROM Notificacion n
+            WHERE n.estadoEnvio = 'PENDIENTE'
+              AND n.fechaProgramada <= :ahora
+              AND n.alerta.estadoActual.codigo = 'ACTIVA'
+            ORDER BY n.fechaProgramada ASC, n.idNotificacion ASC
+            """)
+    List<Notificacion> buscarPendientesProgramadas(
+            @Param("ahora") LocalDateTime ahora);
 }
