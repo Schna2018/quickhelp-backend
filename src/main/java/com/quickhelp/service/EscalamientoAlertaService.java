@@ -9,12 +9,13 @@ import com.quickhelp.repository.AlertaRepository; // Consulta de alertas.
 import com.quickhelp.repository.NotificacionRepository; // Registro de reavisos.
 import com.quickhelp.repository.RedApoyoRepository; // Consulta de prioridades.
 import com.quickhelp.repository.UsuarioRepository; // Consulta de administradores.
+import org.springframework.beans.factory.annotation.Value; // Configuración externa.
 import org.springframework.scheduling.annotation.Scheduled; // Tareas automáticas.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
 import org.springframework.transaction.PlatformTransactionManager; // Transacciones.
 import org.springframework.transaction.support.TransactionTemplate; // Control transaccional.
 import java.time.LocalDateTime; // Fechas programadas.
-import java.util.List; // Colecciones.
+import java.util.List; // Colecciones;
 
 @Service
 public class EscalamientoAlertaService {
@@ -30,6 +31,7 @@ public class EscalamientoAlertaService {
     private final UsuarioRepository usuarioRepository;
     private final ProcesamientoNotificacionService procesamientoNotificacionService;
     private final TransactionTemplate transactionTemplate;
+    private final LocalDateTime fechaActivacion;
 
     public EscalamientoAlertaService(
             AlertaRepository alertaRepository,
@@ -37,30 +39,43 @@ public class EscalamientoAlertaService {
             NotificacionRepository notificacionRepository,
             UsuarioRepository usuarioRepository,
             ProcesamientoNotificacionService procesamientoNotificacionService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            @Value("${quickhelp.escalamiento.fecha-activacion:}") String fechaConfigurada) {
+
         this.alertaRepository = alertaRepository;
         this.redApoyoRepository = redApoyoRepository;
         this.notificacionRepository = notificacionRepository;
         this.usuarioRepository = usuarioRepository;
         this.procesamientoNotificacionService = procesamientoNotificacionService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+
+        // Sin fecha configurada, no se generan nuevos escalamientos.
+        // La fecha debe ser fija y conservarse entre reinicios del servidor.
+        this.fechaActivacion = fechaConfigurada.isBlank()
+                ? null : LocalDateTime.parse(fechaConfigurada);
     }
 
     // Revisa las alertas activas cada 30 segundos.
     @Scheduled(fixedDelay = 30000)
     public void revisarAlertasActivas() {
 
-        List<Alerta> alertas = alertaRepository
-                .findByEstadoActual_CodigoOrderByFechaCreacionDesc("ACTIVA");
+        // Evita generar reavisos mientras no se configure la activación.
+        if (fechaActivacion != null) {
+            List<Alerta> alertas = alertaRepository
+                    .findByEstadoActual_CodigoOrderByFechaCreacionDesc("ACTIVA");
 
-        for (Alerta alerta : alertas) {
+            for (Alerta alerta : alertas) {
+                // Ignora las alertas anteriores a la activación.
+                if (alerta.getFechaCreacion() == null
+                        || alerta.getFechaCreacion().isBefore(fechaActivacion)) continue;
 
-            // Procesa cada alerta dentro de una transacción independiente.
-            transactionTemplate.executeWithoutResult(status ->
-                    generarEscalamiento(alerta.getIdAlerta()));
+                // Procesa cada alerta dentro de una transacción independiente.
+                transactionTemplate.executeWithoutResult(status ->
+                        generarEscalamiento(alerta.getIdAlerta()));
+            }
         }
 
-        // Procesa las notificaciones después de confirmar los registros.
+        // Procesa los avisos pendientes después de confirmar los registros.
         procesamientoNotificacionService.procesarPendientesProgramadas();
     }
 
@@ -68,17 +83,14 @@ public class EscalamientoAlertaService {
     private void generarEscalamiento(Integer idAlerta) {
 
         // Bloquea la alerta para evitar registros simultáneos duplicados.
-        Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
-                .orElse(null);
+        Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta).orElse(null);
 
-        if (alerta == null || alerta.getFechaCreacion() == null) {
-            return;
-        }
+        if (alerta == null || alerta.getFechaCreacion() == null) return;
+        if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())) return;
 
-        // Detiene el escalamiento si la alerta ya no está activa.
-        if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())) {
-            return;
-        }
+        // Segunda comprobación para impedir escalar alertas antiguas.
+        if (fechaActivacion == null
+                || alerta.getFechaCreacion().isBefore(fechaActivacion)) return;
 
         Integer idAdultoMayor = alerta.getAdultoMayor().getIdUsuario();
 
@@ -89,73 +101,46 @@ public class EscalamientoAlertaService {
         LocalDateTime ahora = LocalDateTime.now();
 
         for (RedApoyo integrante : integrantes) {
-
-            // Considera únicamente integrantes activos.
-            if (!Boolean.TRUE.equals(integrante.getEstado())) {
-                continue;
-            }
+            if (!Boolean.TRUE.equals(integrante.getEstado())) continue;
 
             posicion++;
 
-            // Prioridad 1: 2 minutos; prioridad 2: 4; prioridad 3: 6.
             LocalDateTime fechaReaviso = alerta.getFechaCreacion()
                     .plusMinutes(INTERVALO_MINUTOS * posicion);
 
-            if (ahora.isBefore(fechaReaviso)) {
-                continue;
-            }
+            if (ahora.isBefore(fechaReaviso)) continue;
 
             registrarNotificacion(
-                    alerta,
-                    integrante.getIntegrante(),
-                    fechaReaviso,
-                    TIPO_REAVISO);
+                    alerta, integrante.getIntegrante(), fechaReaviso, TIPO_REAVISO);
         }
 
-        // Programa el aviso administrativo después del último contacto.
         LocalDateTime fechaAdministrador = alerta.getFechaCreacion()
                 .plusMinutes(INTERVALO_MINUTOS * (posicion + 1));
 
-        if (ahora.isBefore(fechaAdministrador)) {
-            return;
-        }
+        if (ahora.isBefore(fechaAdministrador)) return;
 
-        // Consulta los administradores activos del sistema.
         List<Usuario> administradores = usuarioRepository
                 .findByRol_CodigoAndEstadoTrue(CODIGO_ADMIN);
 
         for (Usuario administrador : administradores) {
-
-            // Registra el aviso administrativo sin duplicarlo.
             registrarNotificacion(
-                    alerta,
-                    administrador,
-                    fechaAdministrador,
-                    TIPO_ADMIN);
+                    alerta, administrador, fechaAdministrador, TIPO_ADMIN);
         }
     }
 
-    // Registra una notificación con su identificador de tipo.
+    // Registra una notificación evitando duplicados por alerta, usuario y fecha.
     private void registrarNotificacion(
-            Alerta alerta,
-            Usuario destinatario,
-            LocalDateTime fechaProgramada,
-            String tipoAviso) {
+            Alerta alerta, Usuario destinatario,
+            LocalDateTime fechaProgramada, String tipoAviso) {
 
         Integer idAlerta = alerta.getIdAlerta();
         Integer idDestinatario = destinatario.getIdUsuario();
 
-        // Comprueba si el aviso ya fue registrado para esa fecha.
         boolean existe = notificacionRepository
                 .existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
-                        idAlerta,
-                        idDestinatario,
-                        "PUSH",
-                        fechaProgramada);
+                        idAlerta, idDestinatario, "PUSH", fechaProgramada);
 
-        if (existe) {
-            return;
-        }
+        if (existe) return;
 
         Notificacion notificacion = new Notificacion();
         notificacion.setAlerta(alerta);
