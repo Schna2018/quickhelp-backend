@@ -5,9 +5,11 @@ import com.quickhelp.dto.MensajeAlertaResponseDTO; // Datos del chat.
 import com.quickhelp.entity.Alerta; // Emergencia asociada.
 import com.quickhelp.entity.MensajeAlerta; // Mensaje persistido.
 import com.quickhelp.entity.Usuario; // Cuenta autenticada.
+import com.quickhelp.event.MensajeAlertaCreadoEvent; // Evento que activa el aviso del chat.
 import com.quickhelp.repository.AlertaRepository; // Consulta y bloqueo de alertas.
 import com.quickhelp.repository.MensajeAlertaRepository; // Persistencia de mensajes.
 import com.quickhelp.repository.UsuarioRepository; // Consulta de cuentas.
+import org.springframework.context.ApplicationEventPublisher; // Publicación de eventos.
 import org.springframework.http.HttpStatus; // Códigos HTTP.
 import org.springframework.security.core.Authentication; // Identidad del JWT.
 import org.springframework.stereotype.Service; // Servicio Spring.
@@ -22,16 +24,19 @@ public class MensajeAlertaService {
     private final AlertaRepository alertaRepository;
     private final UsuarioRepository usuarioRepository;
     private final RedApoyoAutorizacionService autorizacionService;
+    private final ApplicationEventPublisher eventos;
 
     public MensajeAlertaService(
             MensajeAlertaRepository mensajeRepository,
             AlertaRepository alertaRepository,
             UsuarioRepository usuarioRepository,
-            RedApoyoAutorizacionService autorizacionService) {
+            RedApoyoAutorizacionService autorizacionService,
+            ApplicationEventPublisher eventos) {
         this.mensajeRepository = mensajeRepository;
         this.alertaRepository = alertaRepository;
         this.usuarioRepository = usuarioRepository;
         this.autorizacionService = autorizacionService;
+        this.eventos = eventos;
     }
 
     @Transactional(readOnly = true)
@@ -117,7 +122,11 @@ public class MensajeAlertaService {
         mensaje.setTexto(texto);
         mensaje.setClave(solicitud.clave());
 
-        return convertir(mensajeRepository.saveAndFlush(mensaje));
+        MensajeAlerta guardado = mensajeRepository.saveAndFlush(mensaje);
+
+        // Solo los mensajes nuevos generan aviso; el listener espera la confirmación en BD.
+        eventos.publishEvent(new MensajeAlertaCreadoEvent(idAlerta, guardado.getIdMensaje()));
+        return convertir(guardado);
     }
 
     private Usuario obtenerUsuarioActivo(Authentication authentication) {
