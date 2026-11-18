@@ -43,6 +43,11 @@ public class Alerta {
     @Column(name = "fecha_creacion", nullable = false)
     private LocalDateTime fechaCreacion;
 
+    // Conserva el intervalo SOS asignado al crear la emergencia.
+    // Es nullable para mantener compatibilidad con alertas anteriores.
+    @Column(name = "intervalo_escalamiento_minutos")
+    private Integer intervaloEscalamientoMinutos;
+
     @Column(name = "fecha_atencion")
     private LocalDateTime fechaAtencion;
 
@@ -110,6 +115,16 @@ public class Alerta {
 
     public void setFechaCreacion(LocalDateTime fechaCreacion) {
         this.fechaCreacion = fechaCreacion;
+    }
+
+    // Obtiene el intervalo propio de esta emergencia.
+    public Integer getIntervaloEscalamientoMinutos() {
+        return intervaloEscalamientoMinutos;
+    }
+
+    // Asigna el intervalo al crear la emergencia.
+    public void setIntervaloEscalamientoMinutos(Integer intervaloEscalamientoMinutos) {
+        this.intervaloEscalamientoMinutos = intervaloEscalamientoMinutos;
     }
 
     public LocalDateTime getFechaAtencion() {
