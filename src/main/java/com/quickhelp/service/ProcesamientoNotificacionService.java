@@ -7,10 +7,15 @@ import com.quickhelp.repository.AlertaRepository; // Consulta de estados de aler
 import com.quickhelp.repository.NotificacionRepository; // Repositorio existente.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
 import java.time.LocalDateTime; // Fecha y hora del envío.
+import java.util.HashSet; // Evita procesar una alerta varias veces.
 import java.util.List; // Colección de notificaciones.
+import java.util.Set; // Identificadores de alertas procesadas.
 
 @Service
 public class ProcesamientoNotificacionService {
+
+    private static final String TIPO_ADMIN = "ESCALAMIENTO_ADMIN";
+    private static final String TIPO_REAVISO = "REAVISO_RED";
 
     private final NotificacionRepository notificacionRepository;
     private final AlertaRepository alertaRepository;
@@ -50,12 +55,12 @@ public class ProcesamientoNotificacionService {
                 continue;
             }
 
-            // No envía notificaciones cuando la alerta ya no está activa.
+            // No envía avisos cuando la alerta deja de estar activa.
             if (!alertaActiva(idAlerta)) {
                 continue;
             }
 
-            // Reserva el envío para evitar procesamientos simultáneos.
+            // Reserva el envío para impedir procesamientos simultáneos.
             if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
                 continue;
             }
@@ -70,11 +75,26 @@ public class ProcesamientoNotificacionService {
                 } else {
                     String tokenFcm = notificacion.getDestinatario().getTokenFcm();
 
+                    // Identifica el tipo de notificación antes de finalizarla.
+                    String tipoAviso = notificacion.getResultado();
+
+                    String titulo = "¡Alerta de emergencia!";
+                    String mensaje = "Un integrante de tu red de apoyo necesita asistencia.";
+
+                    if (TIPO_ADMIN.equals(tipoAviso)) {
+                        titulo = "¡SOS sin atención!";
+                        mensaje = "Una emergencia requiere intervención administrativa.";
+                    } else if (TIPO_REAVISO.equals(tipoAviso)) {
+                        titulo = "¡Recordatorio de emergencia!";
+                        mensaje = "La alerta SOS continúa activa y necesita asistencia.";
+                    }
+
+                    // Envía la notificación mediante Firebase Cloud Messaging.
                     resultado = firebaseMessagingService.enviarNotificacion(
                             tokenFcm,
                             idAlerta,
-                            "¡Alerta de emergencia!",
-                            "Un integrante de tu red de apoyo necesita asistencia.");
+                            titulo,
+                            mensaje);
 
                     estado = "ENVIADA";
                 }
@@ -85,7 +105,7 @@ public class ProcesamientoNotificacionService {
                         : e.getClass().getSimpleName();
             }
 
-            // Guarda el resultado del procesamiento en PostgreSQL.
+            // Registra el resultado del intento en PostgreSQL.
             boolean finalizada = notificacionFinalizacionService.finalizar(
                     notificacion.getIdNotificacion(),
                     estado,
@@ -106,8 +126,15 @@ public class ProcesamientoNotificacionService {
         List<Notificacion> notificaciones = notificacionRepository
                 .buscarPendientesProgramadas(LocalDateTime.now());
 
+        // Evita consultar repetidamente la misma alerta durante el ciclo.
+        Set<Integer> alertasProcesadas = new HashSet<>();
+
         for (Notificacion notificacion : notificaciones) {
-            procesarPendientes(notificacion.getAlerta().getIdAlerta());
+            Integer idAlerta = notificacion.getAlerta().getIdAlerta();
+
+            if (alertasProcesadas.add(idAlerta)) {
+                procesarPendientes(idAlerta);
+            }
         }
     }
 
