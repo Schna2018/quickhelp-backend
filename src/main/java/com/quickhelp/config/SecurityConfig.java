@@ -1,3 +1,4 @@
+
 package com.quickhelp.config;
 
 import java.util.List; // Define los valores permitidos para CORS.
@@ -51,6 +52,16 @@ public class SecurityConfig {
                                 "/api/administracion/red-apoyo",
                                 "/api/administracion/red-apoyo/**"
                         ).denyAll()
+
+                        // Solo administradores pueden consultar notificaciones SOS por alerta.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/notificaciones/alerta/*"
+                        ).hasRole("ADMIN")
+
+                        // Bloquea otros métodos sobre el seguimiento administrativo SOS.
+                        .requestMatchers("/api/notificaciones/alerta/**")
+                        .denyAll()
 
                         // Los demás endpoints requieren JWT.
                         .anyRequest().authenticated()
