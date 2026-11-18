@@ -1,11 +1,15 @@
 
 package com.quickhelp.service;
 
+import com.quickhelp.dto.NotificacionAdminResponseDTO; // Datos para el panel administrativo.
 import com.quickhelp.entity.Alerta; // Emergencia que origina las notificaciones.
 import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
 import com.quickhelp.entity.RedApoyo; // Vinculación con integrantes de apoyo.
+import com.quickhelp.entity.Rol; // Rol vigente del administrador.
+import com.quickhelp.entity.Usuario; // Usuario autenticado y destinatario del aviso.
 import com.quickhelp.repository.NotificacionRepository; // Guarda las notificaciones.
 import com.quickhelp.repository.RedApoyoRepository; // Consulta la red de apoyo.
+import com.quickhelp.repository.UsuarioRepository; // Consulta el estado del administrador.
 import org.springframework.stereotype.Service; // Servicio administrado por Spring.
 import org.springframework.transaction.annotation.Transactional; // Control transaccional.
 import java.time.LocalDateTime; // Fecha de programación.
@@ -21,13 +25,16 @@ public class NotificacionService {
 
     private final NotificacionRepository notificacionRepository;
     private final RedApoyoRepository redApoyoRepository;
+    private final UsuarioRepository usuarioRepository;
 
     // Inyecta los repositorios necesarios.
     public NotificacionService(
             NotificacionRepository notificacionRepository,
-            RedApoyoRepository redApoyoRepository) {
+            RedApoyoRepository redApoyoRepository,
+            UsuarioRepository usuarioRepository) {
         this.notificacionRepository = notificacionRepository;
         this.redApoyoRepository = redApoyoRepository;
+        this.usuarioRepository = usuarioRepository;
     }
 
     @Transactional // Registra las notificaciones dentro de una transacción.
@@ -80,20 +87,7 @@ public class NotificacionService {
     public List<NotificacionResponseDTO> listarMisNotificaciones(
             Authentication authentication) {
 
-        // Comprueba que exista una sesión autenticada.
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED, "Usuario no autenticado.");
-        }
-
-        // Obtiene el ID del usuario desde el token JWT.
-        Integer idUsuario;
-        try {
-            idUsuario = Integer.valueOf(authentication.getName());
-        } catch (NumberFormatException | NullPointerException ex) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED, "Token de usuario no válido.");
-        }
+        Integer idUsuario = obtenerIdAutenticado(authentication);
 
         // Consulta exclusivamente las notificaciones del usuario autenticado.
         return notificacionRepository
@@ -110,6 +104,71 @@ public class NotificacionService {
                         notificacion.getFechaEnvio()
                 ))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<NotificacionAdminResponseDTO> listarNotificacionesPorAlerta(
+            Integer idAlerta, Authentication authentication) {
+
+        Usuario administrador = usuarioRepository.findById(obtenerIdAutenticado(authentication))
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+
+        // Solo un administrador activo puede consultar avisos de otros usuarios.
+        Rol rol = administrador.getRol();
+        if (!Boolean.TRUE.equals(administrador.getEstado())
+                || rol == null
+                || !Boolean.TRUE.equals(rol.getEstado())
+                || !"ADMIN".equals(rol.getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Acceso exclusivo para administradores.");
+        }
+
+        return notificacionRepository.findByAlerta_IdAlertaOrderByIdNotificacionDesc(idAlerta)
+                .stream()
+                .map(this::convertirNotificacionAdministrativa)
+                .toList();
+    }
+
+    private NotificacionAdminResponseDTO convertirNotificacionAdministrativa(Notificacion notificacion) {
+        Usuario destinatario = notificacion.getDestinatario();
+        String resultado = notificacion.getResultado();
+        String tipoAviso = null;
+
+        // Al finalizar el envío, el resultado sustituye el código del aviso.
+        if ("ESCALAMIENTO_ADMIN".equals(resultado) || "REAVISO_RED".equals(resultado)) {
+            tipoAviso = resultado;
+            resultado = null;
+        }
+
+        return new NotificacionAdminResponseDTO(
+                notificacion.getIdNotificacion(),
+                notificacion.getAlerta().getIdAlerta(),
+                destinatario.getIdUsuario(),
+                destinatario.getNombreApellido(),
+                tipoAviso,
+                notificacion.getCanal(),
+                notificacion.getEstadoEnvio(),
+                notificacion.getNumeroIntento(),
+                notificacion.getFechaProgramada(),
+                notificacion.getFechaEnvio(),
+                resultado
+        );
+    }
+
+    // Identifica al usuario mediante el sujeto del JWT.
+    private Integer obtenerIdAutenticado(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED, "Usuario no autenticado.");
+        }
+
+        try {
+            return Integer.valueOf(authentication.getName());
+        } catch (NumberFormatException | NullPointerException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED, "Token de usuario no válido.");
+        }
     }
 
 }
