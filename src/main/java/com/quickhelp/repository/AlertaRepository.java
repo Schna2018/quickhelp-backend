@@ -49,6 +49,9 @@ public interface AlertaRepository extends JpaRepository<Alerta, Integer> {
     // Cuenta las alertas que pertenecen a un estado determinado.
     long countByEstadoActual_Codigo(String codigoEstado);
 
+    // Comprueba el estado en la base de datos, incluso en tareas sin sesión web.
+    boolean existsByIdAlertaAndEstadoActual_Codigo(Integer idAlerta, String codigoEstado);
+
     // Obtiene todas las alertas, ordenadas desde la más reciente.
     List<Alerta> findAllByOrderByFechaCreacionDesc();
 

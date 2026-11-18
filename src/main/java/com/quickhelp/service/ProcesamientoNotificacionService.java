@@ -141,9 +141,6 @@ public class ProcesamientoNotificacionService {
     // Comprueba que la alerta siga activa antes de enviar.
     private boolean alertaActiva(Integer idAlerta) {
 
-        return alertaRepository.findById(idAlerta)
-                .map(alerta -> "ACTIVA".equals(
-                        alerta.getEstadoActual().getCodigo()))
-                .orElse(false);
+        return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(idAlerta, "ACTIVA");
     }
 }
