@@ -63,7 +63,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("resultado") String resultado);
 
     // Comprueba si existe un aviso para el mismo contacto y fecha programada.
-    // Se utilizará para controlar los reavisos del escalamiento automático.
+    // Se utiliza para controlar los reavisos del escalamiento automático.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
             Integer idAlerta,
             Integer idDestinatario,
@@ -71,12 +71,14 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             LocalDateTime fechaProgramada);
 
     // Consulta las notificaciones pendientes cuya fecha programada ya se cumplió.
-    // Permite procesar los reavisos sin enviarlos antes de tiempo.
-    @EntityGraph(attributePaths = {"destinatario", "alerta"})
+    // Carga el destinatario y la alerta para evitar problemas de relaciones LAZY.
+    // Excluye las notificaciones de emergencias que ya no están activas.
+    @EntityGraph(attributePaths = {"destinatario", "alerta", "alerta.estadoActual"})
     @Query("""
             SELECT n FROM Notificacion n
             WHERE n.estadoEnvio = 'PENDIENTE'
               AND n.fechaProgramada <= :ahora
+              AND n.alerta.estadoActual.codigo = 'ACTIVA'
             ORDER BY n.fechaProgramada ASC, n.idNotificacion ASC
             """)
     List<Notificacion> buscarPendientesProgramadas(
