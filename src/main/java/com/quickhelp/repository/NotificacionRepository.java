@@ -16,47 +16,55 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
     List<Notificacion> findByDestinatario_IdUsuarioOrderByIdNotificacionDesc(
             Integer idDestinatario);
 
-    // Obtiene las notificaciones asociadas a una alerta.
+    // Obtiene las notificaciones de una alerta.
     @EntityGraph(attributePaths = {"destinatario"})
     List<Notificacion> findByAlerta_IdAlertaOrderByIdNotificacionDesc(
             Integer idAlerta);
 
-    // Obtiene las notificaciones según su estado.
+    // Obtiene notificaciones según su estado.
     List<Notificacion> findByEstadoEnvioOrderByIdNotificacionAsc(
             String estadoEnvio);
 
-    // Obtiene las notificaciones de un usuario según su estado.
+    // Obtiene notificaciones de un usuario según su estado.
     List<Notificacion> findByDestinatario_IdUsuarioAndEstadoEnvioOrderByIdNotificacionDesc(
             Integer idDestinatario, String estadoEnvio);
 
-    // Conserva la comprobación anterior por alerta, destinatario y canal.
+    // Comprueba notificaciones existentes.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanal(
             Integer idAlerta, Integer idDestinatario, String canal);
 
-    // Comprueba duplicados por tipo de aviso.
+    // Evita duplicados del mismo tipo de aviso.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndTipoAviso(
             Integer idAlerta, Integer idDestinatario, String canal, String tipoAviso);
 
-    // Reserva una notificación sin superar tres intentos.
+    // Reserva una notificación e incrementa el contador de forma segura.
     @Modifying
     @Query("""
             UPDATE Notificacion n
             SET n.estadoEnvio = 'EN_PROCESO',
-                n.numeroIntento = n.numeroIntento + 1,
+                n.numeroIntento = COALESCE(n.numeroIntento, 0) + 1,
                 n.fechaInicioProceso = CURRENT_TIMESTAMP
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'PENDIENTE'
               AND COALESCE(n.numeroIntento, 0) < 3
+              AND (n.fechaProgramada IS NULL
+                   OR n.fechaProgramada <= CURRENT_TIMESTAMP)
+              AND n.alerta.idAlerta IN (
+                  SELECT a.idAlerta
+                  FROM Alerta a
+                  WHERE a.estadoActual.codigo = 'ACTIVA'
+              )
             """)
     int reservarNotificacion(@Param("idNotificacion") Integer idNotificacion);
 
-    // Registra el resultado del envío.
+    // Finaliza un envío reservado.
     @Modifying
     @Query("""
             UPDATE Notificacion n
             SET n.estadoEnvio = :estado,
                 n.fechaEnvio = :fechaEnvio,
-                n.resultado = :resultado
+                n.resultado = :resultado,
+                n.fechaInicioProceso = null
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'EN_PROCESO'
             """)
@@ -66,7 +74,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("fechaEnvio") LocalDateTime fechaEnvio,
             @Param("resultado") String resultado);
 
-    // Reprograma un error temporal conservando los intentos.
+    // Reprograma un envío temporalmente fallido.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -76,14 +84,14 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
                 n.resultado = :resultado
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'EN_PROCESO'
-              AND n.numeroIntento < 3
+              AND COALESCE(n.numeroIntento, 0) < 3
             """)
     int reprogramarNotificacion(
             @Param("idNotificacion") Integer idNotificacion,
             @Param("fechaReintento") LocalDateTime fechaReintento,
             @Param("resultado") String resultado);
 
-    // Recupera avisos bloqueados de alertas todavía activas.
+    // Recupera envíos interrumpidos que todavía admiten reintentos.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -93,7 +101,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
                 n.resultado = 'Recuperada tras interrupción del procesamiento.'
             WHERE n.estadoEnvio = 'EN_PROCESO'
               AND n.fechaInicioProceso <= :fechaLimite
-              AND n.numeroIntento < 3
+              AND COALESCE(n.numeroIntento, 0) < 3
               AND n.alerta.idAlerta IN (
                   SELECT a.idAlerta
                   FROM Alerta a
@@ -104,7 +112,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("fechaLimite") LocalDateTime fechaLimite,
             @Param("fechaReintento") LocalDateTime fechaReintento);
 
-    // Cierra avisos bloqueados que ya no deben reintentarse.
+    // Cierra envíos interrumpidos sin posibilidad de reintento.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -114,7 +122,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             WHERE n.estadoEnvio = 'EN_PROCESO'
               AND n.fechaInicioProceso <= :fechaLimite
               AND (
-                  n.numeroIntento >= 3
+                  COALESCE(n.numeroIntento, 0) >= 3
                   OR n.alerta.idAlerta NOT IN (
                       SELECT a.idAlerta
                       FROM Alerta a
@@ -125,20 +133,32 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
     int cerrarNotificacionesBloqueadas(
             @Param("fechaLimite") LocalDateTime fechaLimite);
 
-    // Conserva la consulta anterior por fecha programada.
+    // Cierra notificaciones pendientes que agotaron sus intentos.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'ERROR',
+                n.resultado = 'Se alcanzó el máximo de tres intentos.',
+                n.fechaInicioProceso = null
+            WHERE n.estadoEnvio = 'PENDIENTE'
+              AND COALESCE(n.numeroIntento, 0) >= 3
+            """)
+    int cerrarPendientesAgotadas();
+
+    // Comprueba si existe una notificación en una fecha determinada.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
             Integer idAlerta,
             Integer idDestinatario,
             String canal,
             LocalDateTime fechaProgramada);
 
-    // Busca notificaciones pendientes de alertas activas.
+    // Obtiene notificaciones programadas de alertas activas.
     @EntityGraph(attributePaths = {"destinatario", "alerta", "alerta.estadoActual"})
     @Query("""
             SELECT n
             FROM Notificacion n
             WHERE n.estadoEnvio = 'PENDIENTE'
-              AND n.fechaProgramada <= :ahora
+              AND (n.fechaProgramada IS NULL OR n.fechaProgramada <= :ahora)
               AND n.alerta.estadoActual.codigo = 'ACTIVA'
             ORDER BY n.fechaProgramada ASC, n.idNotificacion ASC
             """)
