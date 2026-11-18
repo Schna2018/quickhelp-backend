@@ -1,14 +1,15 @@
 
 package com.quickhelp.controller;
 
-import com.quickhelp.dto.NotificacionResponseDTO; // Datos de notificación.
+import com.quickhelp.dto.NotificacionAdminResponseDTO; // Datos para el panel administrativo.
+import com.quickhelp.dto.NotificacionResponseDTO; // Datos para la aplicación móvil.
 import com.quickhelp.service.NotificacionService; // Lógica de notificaciones.
+import java.util.List; // Listado de notificaciones.
 import org.springframework.security.core.Authentication; // Usuario autenticado.
 import org.springframework.web.bind.annotation.*; // Endpoints REST.
-import java.util.List; // Lista de notificaciones.
 
-@RestController // Controlador REST.
-@RequestMapping("/api/notificaciones") // Ruta de notificaciones.
+@RestController // Controlador REST de notificaciones.
+@RequestMapping("/api/notificaciones") // Ruta base.
 public class NotificacionController {
 
     private final NotificacionService notificacionService;
@@ -22,7 +23,15 @@ public class NotificacionController {
     @GetMapping
     public List<NotificacionResponseDTO> listarMisNotificaciones(
             Authentication authentication) {
-
         return notificacionService.listarMisNotificaciones(authentication);
+    }
+
+    // Consulta las notificaciones de una alerta para administración.
+    @GetMapping("/alerta/{idAlerta}")
+    public List<NotificacionAdminResponseDTO> listarNotificacionesPorAlerta(
+            @PathVariable Integer idAlerta,
+            Authentication authentication) {
+        return notificacionService.listarNotificacionesPorAlerta(
+                idAlerta, authentication);
     }
 }
