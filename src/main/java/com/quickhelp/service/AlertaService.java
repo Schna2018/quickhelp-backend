@@ -552,6 +552,61 @@ public class AlertaService {
                 "RESOLUCION_ALERTA",
                 "El asistente resolvió la emergencia.");
     }
+    
+    // Consulta el historial persistido de una emergencia para administración.
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> consultarHistorialAdministracion(
+            Integer idAlerta,
+            Authentication authentication) {
+
+        Integer idUsuario = obtenerIdAutenticado(authentication);
+
+        // Comprueba que el administrador esté activo y autorizado.
+        Usuario administrador = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+
+        if (!Boolean.TRUE.equals(administrador.getEstado())
+                || administrador.getRol() == null
+                || !Boolean.TRUE.equals(administrador.getRol().getEstado())
+                || !"ADMIN".equals(administrador.getRol().getCodigo())) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Acceso exclusivo para administradores.");
+        }
+
+        // Comprueba que la emergencia exista.
+        if (!alertaRepository.existsById(idAlerta)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Alerta no encontrada.");
+        }
+
+        // Consulta los eventos persistidos y conserva su orden cronológico.
+        return historialAlertaRepository
+                .findByAlerta_IdAlertaOrderByFechaHoraAsc(idAlerta)
+                .stream()
+                .map(historial -> {
+                    Map<String, Object> evento = new LinkedHashMap<>();
+                    evento.put("accion", historial.getAccion());
+                    evento.put("observacion", historial.getObservacion());
+                    evento.put("fechaHora", historial.getFechaHora());
+                    evento.put("idUsuarioActor",
+                            historial.getUsuarioActor() != null
+                                    ? historial.getUsuarioActor().getIdUsuario()
+                                    : null);
+                    evento.put("estadoAnterior",
+                            historial.getEstadoAnterior() != null
+                                    ? historial.getEstadoAnterior().getCodigo()
+                                    : null);
+                    evento.put("estadoNuevo",
+                            historial.getEstadoNuevo() != null
+                                    ? historial.getEstadoNuevo().getCodigo()
+                                    : null);
+                    return evento;
+                })
+                .toList();
+    }
 
     // Obtiene el identificador del usuario desde el JWT.
     private Integer obtenerIdAutenticado(Authentication authentication) {
