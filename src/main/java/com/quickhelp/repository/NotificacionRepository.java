@@ -29,15 +29,15 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
     List<Notificacion> findByDestinatario_IdUsuarioAndEstadoEnvioOrderByIdNotificacionDesc(
             Integer idDestinatario, String estadoEnvio);
 
-    // Evita duplicar la notificación inicial por canal.
+    // Conserva la comprobación anterior por alerta, destinatario y canal.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanal(
             Integer idAlerta, Integer idDestinatario, String canal);
 
-    // Evita duplicar un aviso de escalamiento del mismo tipo.
+    // Comprueba duplicados por tipo de aviso.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndTipoAviso(
             Integer idAlerta, Integer idDestinatario, String canal, String tipoAviso);
 
-    // Reserva una notificación pendiente para procesarla una sola vez.
+    // Reserva una notificación sin superar tres intentos.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -46,10 +46,11 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
                 n.fechaInicioProceso = CURRENT_TIMESTAMP
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'PENDIENTE'
+              AND COALESCE(n.numeroIntento, 0) < 3
             """)
     int reservarNotificacion(@Param("idNotificacion") Integer idNotificacion);
 
-    // Registra el resultado del envío de una notificación.
+    // Registra el resultado del envío.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -64,6 +65,65 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("estado") String estado,
             @Param("fechaEnvio") LocalDateTime fechaEnvio,
             @Param("resultado") String resultado);
+
+    // Reprograma un error temporal conservando los intentos.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'PENDIENTE',
+                n.fechaProgramada = :fechaReintento,
+                n.fechaInicioProceso = null,
+                n.resultado = :resultado
+            WHERE n.idNotificacion = :idNotificacion
+              AND n.estadoEnvio = 'EN_PROCESO'
+              AND n.numeroIntento < 3
+            """)
+    int reprogramarNotificacion(
+            @Param("idNotificacion") Integer idNotificacion,
+            @Param("fechaReintento") LocalDateTime fechaReintento,
+            @Param("resultado") String resultado);
+
+    // Recupera avisos bloqueados de alertas todavía activas.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'PENDIENTE',
+                n.fechaProgramada = :fechaReintento,
+                n.fechaInicioProceso = null,
+                n.resultado = 'Recuperada tras interrupción del procesamiento.'
+            WHERE n.estadoEnvio = 'EN_PROCESO'
+              AND n.fechaInicioProceso <= :fechaLimite
+              AND n.numeroIntento < 3
+              AND n.alerta.idAlerta IN (
+                  SELECT a.idAlerta
+                  FROM Alerta a
+                  WHERE a.estadoActual.codigo = 'ACTIVA'
+              )
+            """)
+    int recuperarNotificacionesBloqueadas(
+            @Param("fechaLimite") LocalDateTime fechaLimite,
+            @Param("fechaReintento") LocalDateTime fechaReintento);
+
+    // Cierra avisos bloqueados que ya no deben reintentarse.
+    @Modifying
+    @Query("""
+            UPDATE Notificacion n
+            SET n.estadoEnvio = 'ERROR',
+                n.resultado = 'Recuperación cerrada: límite de intentos o alerta inactiva.',
+                n.fechaInicioProceso = null
+            WHERE n.estadoEnvio = 'EN_PROCESO'
+              AND n.fechaInicioProceso <= :fechaLimite
+              AND (
+                  n.numeroIntento >= 3
+                  OR n.alerta.idAlerta NOT IN (
+                      SELECT a.idAlerta
+                      FROM Alerta a
+                      WHERE a.estadoActual.codigo = 'ACTIVA'
+                  )
+              )
+            """)
+    int cerrarNotificacionesBloqueadas(
+            @Param("fechaLimite") LocalDateTime fechaLimite);
 
     // Conserva la consulta anterior por fecha programada.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
