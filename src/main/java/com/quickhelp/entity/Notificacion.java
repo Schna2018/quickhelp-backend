@@ -1,40 +1,48 @@
 
 package com.quickhelp.entity;
 
-import jakarta.persistence.*; // Anotaciones para mapear la tabla en PostgreSQL.
-import java.time.LocalDateTime; // Manejo de fechas y horas.
+import jakarta.persistence.Column; // Configura las columnas.
+import jakarta.persistence.Entity; // Define la entidad JPA.
+import jakarta.persistence.FetchType; // Configura la carga de relaciones.
+import jakarta.persistence.GeneratedValue; // Genera el identificador.
+import jakarta.persistence.GenerationType; // Estrategia de generación.
+import jakarta.persistence.Id; // Identifica la clave primaria.
+import jakarta.persistence.JoinColumn; // Define las claves foráneas.
+import jakarta.persistence.ManyToOne; // Relaciona entidades.
+import jakarta.persistence.Table; // Identifica la tabla PostgreSQL.
+import java.time.LocalDateTime; // Representa fechas y horas.
 
-@Entity // Identifica la clase como una entidad JPA.
+@Entity // Representa una notificación de emergencia.
 @Table(name = "notificacion") // Tabla existente en PostgreSQL.
 public class Notificacion {
 
     @Id // Clave primaria de la notificación.
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // ID generado por PostgreSQL.
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_notificacion")
     private Integer idNotificacion;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Emergencia asociada.
+    @ManyToOne(fetch = FetchType.LAZY) // Emergencia relacionada.
     @JoinColumn(name = "id_alerta", nullable = false)
     private Alerta alerta;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Usuario que recibe la notificación.
+    @ManyToOne(fetch = FetchType.LAZY) // Usuario destinatario.
     @JoinColumn(name = "id_destinatario", nullable = false)
     private Usuario destinatario;
 
-    @Column(name = "numero_intento", nullable = false)
+    @Column(name = "numero_intento")
     private Integer numeroIntento;
 
-    @Column(name = "canal", nullable = false)
+    @Column(name = "canal")
     private String canal;
 
-    @Column(name = "estado_envio", nullable = false)
+    @Column(name = "estado_envio")
     private String estadoEnvio;
 
     @Column(name = "fecha_programada")
     private LocalDateTime fechaProgramada;
 
     @Column(name = "fecha_inicio_proceso")
-    private LocalDateTime fechaInicioProceso; // Momento en que se reserva el envío.
+    private LocalDateTime fechaInicioProceso;
 
     @Column(name = "fecha_envio")
     private LocalDateTime fechaEnvio;
@@ -42,7 +50,15 @@ public class Notificacion {
     @Column(name = "resultado", columnDefinition = "text")
     private String resultado;
 
-    // Identificador de la notificación.
+    // Identifica el tipo de aviso sin depender del resultado del envío.
+    // Permite NULL para conservar las notificaciones históricas.
+    @Column(name = "tipo_aviso", length = 30)
+    private String tipoAviso;
+
+    // Constructor requerido por JPA.
+    public Notificacion() {
+    }
+
     public Integer getIdNotificacion() {
         return idNotificacion;
     }
@@ -51,7 +67,6 @@ public class Notificacion {
         this.idNotificacion = idNotificacion;
     }
 
-    // Emergencia relacionada.
     public Alerta getAlerta() {
         return alerta;
     }
@@ -60,7 +75,6 @@ public class Notificacion {
         this.alerta = alerta;
     }
 
-    // Usuario destinatario.
     public Usuario getDestinatario() {
         return destinatario;
     }
@@ -69,7 +83,6 @@ public class Notificacion {
         this.destinatario = destinatario;
     }
 
-    // Número de intentos de envío.
     public Integer getNumeroIntento() {
         return numeroIntento;
     }
@@ -78,7 +91,6 @@ public class Notificacion {
         this.numeroIntento = numeroIntento;
     }
 
-    // Canal utilizado para la notificación.
     public String getCanal() {
         return canal;
     }
@@ -87,7 +99,6 @@ public class Notificacion {
         this.canal = canal;
     }
 
-    // Estado del envío.
     public String getEstadoEnvio() {
         return estadoEnvio;
     }
@@ -96,7 +107,6 @@ public class Notificacion {
         this.estadoEnvio = estadoEnvio;
     }
 
-    // Fecha en que se programó el envío.
     public LocalDateTime getFechaProgramada() {
         return fechaProgramada;
     }
@@ -105,7 +115,6 @@ public class Notificacion {
         this.fechaProgramada = fechaProgramada;
     }
 
-    // Fecha de inicio del procesamiento.
     public LocalDateTime getFechaInicioProceso() {
         return fechaInicioProceso;
     }
@@ -114,7 +123,6 @@ public class Notificacion {
         this.fechaInicioProceso = fechaInicioProceso;
     }
 
-    // Fecha efectiva de envío.
     public LocalDateTime getFechaEnvio() {
         return fechaEnvio;
     }
@@ -123,12 +131,19 @@ public class Notificacion {
         this.fechaEnvio = fechaEnvio;
     }
 
-    // Resultado o detalle del intento.
     public String getResultado() {
         return resultado;
     }
 
     public void setResultado(String resultado) {
         this.resultado = resultado;
+    }
+
+    public String getTipoAviso() {
+        return tipoAviso;
+    }
+
+    public void setTipoAviso(String tipoAviso) {
+        this.tipoAviso = tipoAviso;
     }
 }
