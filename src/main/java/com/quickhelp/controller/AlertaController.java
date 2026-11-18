@@ -4,19 +4,22 @@ package com.quickhelp.controller;
 import com.quickhelp.dto.AlertaResponseDTO; // Respuesta de alertas.
 import com.quickhelp.dto.CrearAlertaRequestDTO; // Coordenadas GPS opcionales.
 import com.quickhelp.dto.ResolverAlertaRequestDTO; // Observación de cierre.
+import com.quickhelp.entity.HistorialAlerta; // Historial persistido.
 import com.quickhelp.service.AlertaService; // Servicio de emergencias.
-import java.util.List; // Listado de alertas.
+import java.util.LinkedHashMap; // Respuestas con valores nulos.
+import java.util.List; // Listados.
 import java.util.Map; // Respuestas JSON.
 import org.springframework.http.HttpStatus; // Estados HTTP.
 import org.springframework.security.core.Authentication; // Usuario autenticado.
 import org.springframework.web.bind.annotation.GetMapping; // Consultas GET.
 import org.springframework.web.bind.annotation.PatchMapping; // Actualizaciones PATCH.
-import org.springframework.web.bind.annotation.PathVariable; // ID desde la URL.
+import org.springframework.web.bind.annotation.PathVariable; // ID desde URL.
 import org.springframework.web.bind.annotation.PostMapping; // Creación POST.
 import org.springframework.web.bind.annotation.RequestBody; // Datos JSON.
 import org.springframework.web.bind.annotation.RequestMapping; // Ruta principal.
 import org.springframework.web.bind.annotation.ResponseStatus; // Estado HTTP.
 import org.springframework.web.bind.annotation.RestController; // Controlador REST.
+import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
 
 @RestController // Expone las operaciones de emergencias.
 @RequestMapping("/api/alertas") // Ruta principal del módulo.
@@ -48,15 +51,73 @@ public class AlertaController {
         return alertaService.listarAlertasAdministracion(authentication);
     }
 
+    // Consulta el historial real de una alerta para administración.
+    @GetMapping("/administracion/{idAlerta}/historial")
+    public List<Map<String, Object>> consultarHistorialAdministracion(
+            @PathVariable Integer idAlerta,
+            Authentication authentication) {
+
+        // Restringe el historial a administradores autenticados.
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || authentication.getAuthorities().stream()
+                    .noneMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "No tienes permiso para consultar este historial.");
+        }
+
+        // Recupera los eventos persistidos mediante el servicio.
+        return alertaService.consultarHistorial(idAlerta)
+                .stream()
+                .map(this::convertirHistorial)
+                .toList();
+    }
+
+    // Convierte una entidad de historial a una respuesta segura.
+    private Map<String, Object> convertirHistorial(
+            HistorialAlerta historial) {
+
+        Map<String, Object> respuesta = new LinkedHashMap<>();
+
+        respuesta.put("accion", historial.getAccion());
+        respuesta.put("observacion", historial.getObservacion());
+        respuesta.put("fechaHora", historial.getFechaHora());
+
+        respuesta.put(
+                "idUsuarioActor",
+                historial.getUsuarioActor() != null
+                        ? historial.getUsuarioActor().getIdUsuario()
+                        : null);
+
+        respuesta.put(
+                "estadoAnterior",
+                historial.getEstadoAnterior() != null
+                        ? historial.getEstadoAnterior().getCodigo()
+                        : null);
+
+        respuesta.put(
+                "estadoNuevo",
+                historial.getEstadoNuevo() != null
+                        ? historial.getEstadoNuevo().getCodigo()
+                        : null);
+
+        return respuesta;
+    }
+
     // Consulta las alertas del adulto mayor autenticado.
     @GetMapping
-    public List<AlertaResponseDTO> listarAlertas(Authentication authentication) {
+    public List<AlertaResponseDTO> listarAlertas(
+            Authentication authentication) {
+
         return alertaService.listarAlertas(authentication);
     }
 
     // El asistente consulta su red sin enviar identificadores desde la app.
     @GetMapping("/mi-red")
-    public List<AlertaResponseDTO> listarAlertasDeMiRed(Authentication authentication) {
+    public List<AlertaResponseDTO> listarAlertasDeMiRed(
+            Authentication authentication) {
+
         return alertaService.listarAlertasDeMiRed(authentication);
     }
 
@@ -76,7 +137,8 @@ public class AlertaController {
             @PathVariable Integer idAlerta,
             Authentication authentication) {
 
-        return alertaService.consultarUbicacion(idAlerta, authentication);
+        return alertaService.consultarUbicacion(
+                idAlerta, authentication);
     }
 
     // Permite que un asistente vinculado inicie la atención.
@@ -86,7 +148,8 @@ public class AlertaController {
             @PathVariable Integer idAlerta,
             Authentication authentication) {
 
-        alertaService.iniciarAtencion(idAlerta, authentication);
+        alertaService.iniciarAtencion(
+                idAlerta, authentication);
     }
 
     // Permite al asistente responsable resolver la emergencia.
