@@ -3,6 +3,8 @@ package com.quickhelp.service;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -18,9 +20,12 @@ import tools.jackson.databind.JsonNode;
 public class GeocodificacionService {
 
     private static final long PAUSA_POR_CUOTA_MS = 60_000L;
+    private static final int MAXIMO_GUARDADAS = 500;
     private final String clave;
     private final RestClient cliente;
     private final AtomicLong reintentarDesde = new AtomicLong();
+    // Direcciones ya resueltas: un punto fijo no cambia de dirección.
+    private final Map<String, JsonNode> guardadas = new ConcurrentHashMap<>();
 
     public GeocodificacionService(@Value("${QUICKHELP_MAPS_KEY:}") String clave) {
         this.clave = clave.trim(); // La credencial se lee del entorno del backend.
@@ -41,6 +46,14 @@ public class GeocodificacionService {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE, "El servicio de direcciones no está configurado.");
         }
+
+        // Reutiliza la dirección ya obtenida, aunque esté vigente la pausa por cuota.
+        String llave = latitud.toPlainString() + "," + longitud.toPlainString();
+        JsonNode guardada = guardadas.get(llave);
+        if (guardada != null) {
+            return guardada;
+        }
+
         if (System.currentTimeMillis() < reintentarDesde.get()) {
             throw limiteDeCuota();
         }
@@ -56,6 +69,11 @@ public class GeocodificacionService {
                     .body(JsonNode.class);
 
             if (resultado != null && resultado.isObject()) {
+                // Limita la memoria usada por las direcciones guardadas.
+                if (guardadas.size() >= MAXIMO_GUARDADAS) {
+                    guardadas.clear();
+                }
+                guardadas.put(llave, resultado);
                 return resultado;
             }
         } catch (HttpClientErrorException.TooManyRequests fallo) {
