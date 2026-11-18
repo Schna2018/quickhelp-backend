@@ -1,3 +1,4 @@
+
 package com.quickhelp.service;
 
 import com.quickhelp.dto.AlertaResponseDTO; // Respuesta de emergencias.
@@ -13,6 +14,7 @@ import com.quickhelp.repository.AlertaRepository; // Acceso a alertas.
 import com.quickhelp.repository.AuditoriaRepository; // Acceso a auditoría.
 import com.quickhelp.repository.EstadoAlertaRepository; // Acceso a estados.
 import com.quickhelp.repository.HistorialAlertaRepository; // Acceso al historial.
+import com.quickhelp.repository.ParametroSistemaRepository; // Configuración del intervalo SOS.
 import com.quickhelp.repository.UbicacionRepository; // Acceso a ubicaciones.
 import com.quickhelp.repository.UsuarioRepository; // Acceso a usuarios.
 import java.math.BigDecimal; // Validación de coordenadas.
@@ -39,6 +41,7 @@ public class AlertaService {
     private final NotificacionService notificacionService;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditoriaRepository auditoriaRepository; // Guarda acciones auditadas.
+    private final ParametroSistemaRepository parametroSistemaRepository; // Consulta parámetros del sistema.
 
     // Inyecta los repositorios y servicios existentes.
     public AlertaService(
@@ -50,7 +53,8 @@ public class AlertaService {
             RedApoyoAutorizacionService redApoyoAutorizacionService,
             NotificacionService notificacionService,
             ApplicationEventPublisher eventPublisher,
-            AuditoriaRepository auditoriaRepository) {
+            AuditoriaRepository auditoriaRepository,
+            ParametroSistemaRepository parametroSistemaRepository) {
 
         this.alertaRepository = alertaRepository;
         this.estadoAlertaRepository = estadoAlertaRepository;
@@ -61,6 +65,7 @@ public class AlertaService {
         this.notificacionService = notificacionService;
         this.eventPublisher = eventPublisher;
         this.auditoriaRepository = auditoriaRepository;
+        this.parametroSistemaRepository = parametroSistemaRepository;
     }
 
     // Mantiene la compatibilidad con llamadas sin coordenadas GPS.
@@ -125,6 +130,7 @@ public class AlertaService {
         alerta.setEstadoActual(estadoInicial);
         alerta.setTipoActivacion("MANUAL");
         alerta.setFechaCreacion(LocalDateTime.now());
+        alerta.setIntervaloEscalamientoMinutos(obtenerIntervaloEscalamientoMinutos());
 
         Alerta alertaGuardada = alertaRepository.save(alerta);
 
@@ -159,6 +165,22 @@ public class AlertaService {
                 new AlertaCreadaEvent(alertaGuardada.getIdAlerta()));
 
         return alertaGuardada.getIdAlerta();
+    }
+
+    // Fija el intervalo al crear la alerta; los cambios posteriores no la afectan.
+    private Integer obtenerIntervaloEscalamientoMinutos() {
+        return parametroSistemaRepository.findByClave("INTERVALO_ESCALAMIENTO_SOS")
+                .map(parametro -> parametro.getValor())
+                .map(valor -> {
+                    try {
+                        int minutos = Integer.parseInt(valor);
+                        return (minutos == 1 || minutos == 2 || minutos == 3 || minutos == 5)
+                                ? minutos : 2;
+                    } catch (NumberFormatException ex) {
+                        return 2;
+                    }
+                })
+                .orElse(2);
     }
 
     // Agrega una ubicación sin sobrescribir las lecturas anteriores.
