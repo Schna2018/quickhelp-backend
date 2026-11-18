@@ -27,7 +27,6 @@ public class ParametroSistemaService {
             ParametroSistemaRepository parametroRepository,
             UsuarioRepository usuarioRepository,
             AuditoriaRepository auditoriaRepository) {
-
         this.parametroRepository = parametroRepository;
         this.usuarioRepository = usuarioRepository;
         this.auditoriaRepository = auditoriaRepository;
@@ -43,8 +42,7 @@ public class ParametroSistemaService {
     // Actualiza el valor de un parámetro existente.
     @Transactional
     public ParametroSistema actualizar(
-            Integer idParametro,
-            String nuevoValor,
+            Integer idParametro, String nuevoValor,
             Authentication authentication) {
 
         Usuario administrador = validarAdministrador(authentication);
@@ -60,9 +58,9 @@ public class ParametroSistemaService {
 
         String valorValidado = nuevoValor.trim();
 
-        // Comprueba que el valor coincida con el tipo de dato.
+        // Comprueba el tipo de dato y los límites autorizados.
         validarTipoDato(parametro.getTipoDato(), valorValidado);
-        validarReglasParametro(parametro.getClave(), valorValidado); // Comprueba límites de configuración.
+        validarReglasParametro(parametro.getClave(), valorValidado);
 
         String valorAnterior = parametro.getValor();
 
@@ -119,7 +117,7 @@ public class ParametroSistemaService {
     private void validarReglasParametro(String clave, String valor) {
         switch (clave) {
 
-            // Notificaciones generales, por correo, navegador y alertas sonoras.
+            // Preferencias de notificaciones.
             case "NOTIFICACIONES_HABILITADAS":
             case "NOTIFICACIONES_CORREO_HABILITADAS":
             case "NOTIFICACIONES_NAVEGADOR_HABILITADAS":
@@ -141,7 +139,7 @@ public class ParametroSistemaService {
                 }
                 break;
 
-            // Institución responsable del sistema.
+            // Institución responsable.
             case "NOMBRE_INSTITUCION":
                 if (valor.length() > 150) {
                     throw new ResponseStatusException(
@@ -181,7 +179,19 @@ public class ParametroSistemaService {
                 }
                 break;
 
-            // Prioridad predeterminada para solicitudes sin prioridad asignada.
+            // Intervalo entre reavisos automáticos de emergencias SOS.
+            case "INTERVALO_ESCALAMIENTO_SOS":
+                if (!"1".equals(valor)
+                        && !"2".equals(valor)
+                        && !"3".equals(valor)
+                        && !"5".equals(valor)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "El intervalo SOS debe ser 1, 2, 3 o 5 minutos.");
+                }
+                break;
+
+            // Prioridad predeterminada de solicitudes.
             case "PRIORIDAD_PREDETERMINADA":
                 if (!"BAJA".equals(valor)
                         && !"MEDIA".equals(valor)
@@ -224,7 +234,6 @@ public class ParametroSistemaService {
                 || usuario.getRol() == null
                 || !Boolean.TRUE.equals(usuario.getRol().getEstado())
                 || !"ADMIN".equals(usuario.getRol().getCodigo())) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
                     "Solo un administrador activo puede modificar parámetros.");
