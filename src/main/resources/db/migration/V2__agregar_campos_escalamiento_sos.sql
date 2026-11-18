@@ -9,24 +9,23 @@ ALTER TABLE alerta
 ADD COLUMN IF NOT EXISTS intervalo_escalamiento_minutos INTEGER;
 
 -- Agrega un identificador permanente para el tipo de aviso.
+-- NULL conserva las notificaciones históricas sin clasificar.
 ALTER TABLE notificacion
 ADD COLUMN IF NOT EXISTS tipo_aviso VARCHAR(30);
 
--- Recupera los tipos de avisos antiguos que fueron
--- almacenados temporalmente en la columna resultado.
+-- Recupera únicamente los tipos antiguos identificables
+-- de forma explícita en la columna resultado.
 UPDATE notificacion
 SET tipo_aviso = resultado
 WHERE tipo_aviso IS NULL
   AND resultado IN ('REAVISO_RED', 'ESCALAMIENTO_ADMIN');
 
--- Identifica las notificaciones iniciales anteriores.
--- No modifica el resultado del envío registrado.
-UPDATE notificacion
-SET tipo_aviso = 'INICIAL_SOS'
-WHERE tipo_aviso IS NULL;
+-- No clasifica automáticamente otros registros históricos.
+-- Los avisos nuevos tendrán su tipo asignado desde Java.
 
--- Impide duplicar el mismo tipo de aviso PUSH para
--- una alerta y un destinatario.
+-- Evita duplicados futuros para los avisos identificados.
+-- Antes de activar este índice, verificar que no existan
+-- duplicados históricos de estos tipos.
 CREATE UNIQUE INDEX IF NOT EXISTS
 ux_notificacion_alerta_destinatario_tipo_push
 ON notificacion (
