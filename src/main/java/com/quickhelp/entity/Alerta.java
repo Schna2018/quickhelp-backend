@@ -17,7 +17,7 @@ import java.time.LocalDateTime; // Representa fechas y horas.
 public class Alerta {
 
     @Id // Clave primaria de la alerta.
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // PostgreSQL genera el ID.
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_alerta")
     private Integer idAlerta;
 
@@ -42,6 +42,11 @@ public class Alerta {
 
     @Column(name = "fecha_creacion", nullable = false)
     private LocalDateTime fechaCreacion;
+
+    // Conserva el intervalo SOS asignado al crear la emergencia.
+    // Permite NULL para mantener compatibilidad con alertas anteriores.
+    @Column(name = "intervalo_escalamiento_minutos")
+    private Integer intervaloEscalamientoMinutos;
 
     @Column(name = "fecha_atencion")
     private LocalDateTime fechaAtencion;
@@ -110,6 +115,16 @@ public class Alerta {
 
     public void setFechaCreacion(LocalDateTime fechaCreacion) {
         this.fechaCreacion = fechaCreacion;
+    }
+
+    // Obtiene el intervalo fijo de esta emergencia.
+    public Integer getIntervaloEscalamientoMinutos() {
+        return intervaloEscalamientoMinutos;
+    }
+
+    // Asigna el intervalo cuando se crea una nueva alerta.
+    public void setIntervaloEscalamientoMinutos(Integer intervaloEscalamientoMinutos) {
+        this.intervaloEscalamientoMinutos = intervaloEscalamientoMinutos;
     }
 
     public LocalDateTime getFechaAtencion() {
