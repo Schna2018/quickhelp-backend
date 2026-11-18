@@ -5,11 +5,13 @@ import com.google.firebase.messaging.FirebaseMessagingException; // Errores de F
 import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
 import com.quickhelp.repository.AlertaRepository; // Consulta estados de alertas.
 import com.quickhelp.repository.NotificacionRepository; // Repositorio de notificaciones.
-import java.time.LocalDateTime; // Fecha y hora de los envíos.
+import java.time.LocalDateTime; // Fecha y hora.
 import java.util.HashSet; // Evita procesamientos repetidos.
 import java.util.List; // Listado de notificaciones.
 import java.util.Set; // Identificadores de alertas.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
+import org.springframework.transaction.PlatformTransactionManager; // Gestor transaccional.
+import org.springframework.transaction.support.TransactionTemplate; // Transacciones independientes.
 
 @Service
 public class ProcesamientoNotificacionService {
@@ -19,64 +21,47 @@ public class ProcesamientoNotificacionService {
     private static final String TIPO_REAVISO = "REAVISO_RED";
     private static final int MAX_INTENTOS = 3;
     private static final int ESPERA_REINTENTO_MINUTOS = 2;
+    private static final int TIEMPO_RECUPERACION_MINUTOS = 5;
 
     private final NotificacionRepository notificacionRepository;
     private final AlertaRepository alertaRepository;
     private final FirebaseMessagingService firebaseMessagingService;
     private final NotificacionFinalizacionService notificacionFinalizacionService;
     private final NotificacionReservaService notificacionReservaService;
+    private final TransactionTemplate transactionTemplate;
 
     public ProcesamientoNotificacionService(
             NotificacionRepository notificacionRepository,
             AlertaRepository alertaRepository,
             FirebaseMessagingService firebaseMessagingService,
             NotificacionReservaService notificacionReservaService,
-            NotificacionFinalizacionService notificacionFinalizacionService) {
+            NotificacionFinalizacionService notificacionFinalizacionService,
+            PlatformTransactionManager transactionManager) {
         this.notificacionRepository = notificacionRepository;
         this.alertaRepository = alertaRepository;
         this.firebaseMessagingService = firebaseMessagingService;
         this.notificacionReservaService = notificacionReservaService;
         this.notificacionFinalizacionService = notificacionFinalizacionService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    // Procesa las notificaciones pendientes de una alerta específica.
+    // Procesa las notificaciones pendientes de una alerta.
     public void procesarPendientes(Integer idAlerta) {
         List<Notificacion> notificaciones = notificacionRepository
                 .findByAlerta_IdAlertaOrderByIdNotificacionDesc(idAlerta);
 
         for (Notificacion notificacion : notificaciones) {
-            if (!"PENDIENTE".equals(notificacion.getEstadoEnvio())) {
-                continue;
-            }
-
+            if (!"PENDIENTE".equals(notificacion.getEstadoEnvio())) continue;
             if (notificacion.getFechaProgramada() != null
-                    && notificacion.getFechaProgramada().isAfter(LocalDateTime.now())) {
-                continue;
-            }
-
-            if (!alertaActiva(idAlerta)) {
-                continue;
-            }
+                    && notificacion.getFechaProgramada().isAfter(LocalDateTime.now())) continue;
+            if (!alertaActiva(idAlerta)) continue;
 
             Integer intentosAnteriores = notificacion.getNumeroIntento();
             int intentos = intentosAnteriores == null ? 0 : intentosAnteriores;
 
-            // No supera el máximo de intentos permitidos.
-            if (intentos >= MAX_INTENTOS) {
-                if (notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
-                    finalizarObligatoriamente(
-                            notificacion.getIdNotificacion(),
-                            "ERROR",
-                            null,
-                            "Se alcanzó el máximo de intentos permitidos.");
-                }
-                continue;
-            }
-
-            // Reserva el envío antes de contactar Firebase.
-            if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
-                continue;
-            }
+            // El máximo de intentos también se controla en el repositorio.
+            if (intentos >= MAX_INTENTOS) continue;
+            if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) continue;
 
             int intentoActual = intentos + 1;
             String estado = "ERROR";
@@ -116,18 +101,15 @@ public class ProcesamientoNotificacionService {
                 errorTemporal = esErrorTemporalFirebase(e);
             } catch (RuntimeException e) {
                 resultado = obtenerMensajeError(e);
-                // No reintenta automáticamente errores internos desconocidos.
             }
 
-            // Reprograma solamente errores temporales y con intentos disponibles.
+            // Reintenta errores temporales sin superar tres intentos.
             if (errorTemporal && intentoActual < MAX_INTENTOS && alertaActiva(idAlerta)) {
                 LocalDateTime proximoIntento = LocalDateTime.now()
                         .plusMinutes(ESPERA_REINTENTO_MINUTOS);
 
                 boolean reprogramada = notificacionFinalizacionService.reprogramar(
-                        notificacion.getIdNotificacion(),
-                        proximoIntento,
-                        resultado);
+                        notificacion.getIdNotificacion(), proximoIntento, resultado);
 
                 if (!reprogramada) {
                     throw new IllegalStateException(
@@ -145,8 +127,26 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Procesa las notificaciones programadas cuya fecha ya se cumplió.
+    // Recupera registros que permanecieron bloqueados tras una interrupción.
+    public void recuperarNotificacionesBloqueadas() {
+        LocalDateTime ahora = LocalDateTime.now();
+        LocalDateTime fechaLimite = ahora.minusMinutes(TIEMPO_RECUPERACION_MINUTOS);
+        LocalDateTime fechaReintento = ahora.plusMinutes(ESPERA_REINTENTO_MINUTOS);
+
+        transactionTemplate.executeWithoutResult(status -> {
+            // Cierra primero los registros sin posibilidad de reintento.
+            notificacionRepository.cerrarNotificacionesBloqueadas(fechaLimite);
+
+            // Reprograma los registros recuperables.
+            notificacionRepository.recuperarNotificacionesBloqueadas(
+                    fechaLimite, fechaReintento);
+        });
+    }
+
+    // Recupera bloqueos y procesa las notificaciones programadas.
     public void procesarPendientesProgramadas() {
+        recuperarNotificacionesBloqueadas();
+
         List<Notificacion> notificaciones = notificacionRepository
                 .buscarPendientesProgramadas(LocalDateTime.now());
 
@@ -154,20 +154,16 @@ public class ProcesamientoNotificacionService {
 
         for (Notificacion notificacion : notificaciones) {
             Integer idAlerta = notificacion.getAlerta().getIdAlerta();
-
-            if (alertasProcesadas.add(idAlerta)) {
-                procesarPendientes(idAlerta);
-            }
+            if (alertasProcesadas.add(idAlerta)) procesarPendientes(idAlerta);
         }
     }
 
-    // Identifica errores temporales de Firebase.
+    // Determina si Firebase presentó un error temporal.
     private boolean esErrorTemporalFirebase(FirebaseMessagingException e) {
         if (e.getMessagingErrorCode() != null) {
             switch (e.getMessagingErrorCode()) {
                 case UNAVAILABLE:
                 case INTERNAL:
-                case THIRD_PARTY_AUTH_ERROR:
                     return true;
                 default:
                     return false;
@@ -179,16 +175,17 @@ public class ProcesamientoNotificacionService {
                 || e.getErrorCode() == com.google.firebase.ErrorCode.RESOURCE_EXHAUSTED;
     }
 
-    // Obtiene un mensaje de error sin perder el motivo del fallo.
+    // Obtiene una descripción del error.
     private String obtenerMensajeError(Exception e) {
         return e.getMessage() != null
                 ? e.getMessage()
                 : e.getClass().getSimpleName();
     }
 
-    // Confirma la finalización o informa de una inconsistencia.
-    private void finalizarObligatoriamente(Integer idNotificacion,
-            String estado, LocalDateTime fechaEnvio, String resultado) {
+    // Confirma que el registro quedó finalizado.
+    private void finalizarObligatoriamente(
+            Integer idNotificacion, String estado,
+            LocalDateTime fechaEnvio, String resultado) {
 
         boolean finalizada = notificacionFinalizacionService.finalizar(
                 idNotificacion, estado, fechaEnvio, resultado);
@@ -199,7 +196,7 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Comprueba que la emergencia continúe activa.
+    // Verifica que la alerta siga activa.
     private boolean alertaActiva(Integer idAlerta) {
         return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(
                 idAlerta, "ACTIVA");
