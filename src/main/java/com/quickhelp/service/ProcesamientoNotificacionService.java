@@ -18,6 +18,10 @@ public class ProcesamientoNotificacionService {
     private static final String TIPO_ADMIN = "ESCALAMIENTO_ADMIN";
     private static final String TIPO_REAVISO = "REAVISO_RED";
 
+    // Configuración para los futuros reintentos automáticos.
+    private static final int MAX_INTENTOS = 3;
+    private static final int ESPERA_REINTENTO_MINUTOS = 2;
+
     private final NotificacionRepository notificacionRepository;
     private final AlertaRepository alertaRepository;
     private final FirebaseMessagingService firebaseMessagingService;
