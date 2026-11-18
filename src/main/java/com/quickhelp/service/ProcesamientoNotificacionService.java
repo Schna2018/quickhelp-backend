@@ -58,8 +58,6 @@ public class ProcesamientoNotificacionService {
 
             Integer intentosAnteriores = notificacion.getNumeroIntento();
             int intentos = intentosAnteriores == null ? 0 : intentosAnteriores;
-
-            // El máximo de intentos también se controla en el repositorio.
             if (intentos >= MAX_INTENTOS) continue;
             if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) continue;
 
@@ -103,7 +101,7 @@ public class ProcesamientoNotificacionService {
                 resultado = obtenerMensajeError(e);
             }
 
-            // Reintenta errores temporales sin superar tres intentos.
+            // Reprograma errores temporales con intentos disponibles.
             if (errorTemporal && intentoActual < MAX_INTENTOS && alertaActiva(idAlerta)) {
                 LocalDateTime proximoIntento = LocalDateTime.now()
                         .plusMinutes(ESPERA_REINTENTO_MINUTOS);
@@ -127,23 +125,26 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Recupera registros que permanecieron bloqueados tras una interrupción.
+    // Recupera bloqueos y cierra notificaciones agotadas.
     public void recuperarNotificacionesBloqueadas() {
         LocalDateTime ahora = LocalDateTime.now();
         LocalDateTime fechaLimite = ahora.minusMinutes(TIEMPO_RECUPERACION_MINUTOS);
         LocalDateTime fechaReintento = ahora.plusMinutes(ESPERA_REINTENTO_MINUTOS);
 
         transactionTemplate.executeWithoutResult(status -> {
-            // Cierra primero los registros sin posibilidad de reintento.
+            // Cierra notificaciones pendientes que alcanzaron tres intentos.
+            notificacionRepository.cerrarPendientesAgotadas();
+
+            // Cierra envíos interrumpidos sin posibilidad de reintento.
             notificacionRepository.cerrarNotificacionesBloqueadas(fechaLimite);
 
-            // Reprograma los registros recuperables.
+            // Recupera envíos interrumpidos que aún admiten reintentos.
             notificacionRepository.recuperarNotificacionesBloqueadas(
                     fechaLimite, fechaReintento);
         });
     }
 
-    // Recupera bloqueos y procesa las notificaciones programadas.
+    // Ejecuta la recuperación antes de procesar los avisos programados.
     public void procesarPendientesProgramadas() {
         recuperarNotificacionesBloqueadas();
 
@@ -158,7 +159,7 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Determina si Firebase presentó un error temporal.
+    // Identifica errores temporales de Firebase.
     private boolean esErrorTemporalFirebase(FirebaseMessagingException e) {
         if (e.getMessagingErrorCode() != null) {
             switch (e.getMessagingErrorCode()) {
@@ -175,14 +176,14 @@ public class ProcesamientoNotificacionService {
                 || e.getErrorCode() == com.google.firebase.ErrorCode.RESOURCE_EXHAUSTED;
     }
 
-    // Obtiene una descripción del error.
+    // Obtiene el mensaje del error.
     private String obtenerMensajeError(Exception e) {
         return e.getMessage() != null
                 ? e.getMessage()
                 : e.getClass().getSimpleName();
     }
 
-    // Confirma que el registro quedó finalizado.
+    // Confirma la finalización de una notificación.
     private void finalizarObligatoriamente(
             Integer idNotificacion, String estado,
             LocalDateTime fechaEnvio, String resultado) {
@@ -196,7 +197,7 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Verifica que la alerta siga activa.
+    // Comprueba que la alerta continúe activa.
     private boolean alertaActiva(Integer idAlerta) {
         return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(
                 idAlerta, "ACTIVA");
