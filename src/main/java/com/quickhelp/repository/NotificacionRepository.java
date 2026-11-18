@@ -2,38 +2,42 @@
 package com.quickhelp.repository;
 
 import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
-import java.time.LocalDateTime; // Fecha y hora del envío.
-import java.util.List; // Manejo de listas.
-import org.springframework.data.jpa.repository.EntityGraph; // Carga relaciones necesarias.
+import java.time.LocalDateTime; // Manejo de fechas.
+import java.util.List; // Listado de notificaciones.
+import org.springframework.data.jpa.repository.EntityGraph; // Carga relaciones.
 import org.springframework.data.jpa.repository.JpaRepository; // Operaciones CRUD.
-import org.springframework.data.jpa.repository.Modifying; // Permite ejecutar UPDATE.
-import org.springframework.data.jpa.repository.Query; // Consultas JPQL.
-import org.springframework.data.repository.query.Param; // Vincula parámetros.
+import org.springframework.data.jpa.repository.Modifying; // Consultas de actualización.
+import org.springframework.data.jpa.repository.Query; // Consultas personalizadas.
+import org.springframework.data.repository.query.Param; // Parámetros de consultas.
 
 public interface NotificacionRepository extends JpaRepository<Notificacion, Integer> {
 
-    // Consulta las notificaciones de un usuario, desde la más reciente.
+    // Obtiene las notificaciones de un destinatario.
     List<Notificacion> findByDestinatario_IdUsuarioOrderByIdNotificacionDesc(
             Integer idDestinatario);
 
-    // Carga el destinatario y su token FCM junto con cada notificación.
+    // Obtiene las notificaciones asociadas a una alerta.
     @EntityGraph(attributePaths = {"destinatario"})
     List<Notificacion> findByAlerta_IdAlertaOrderByIdNotificacionDesc(
             Integer idAlerta);
 
-    // Obtiene las notificaciones según su estado de envío.
+    // Obtiene las notificaciones según su estado.
     List<Notificacion> findByEstadoEnvioOrderByIdNotificacionAsc(
             String estadoEnvio);
 
-    // Consulta las notificaciones de un destinatario según su estado.
+    // Obtiene las notificaciones de un usuario según su estado.
     List<Notificacion> findByDestinatario_IdUsuarioAndEstadoEnvioOrderByIdNotificacionDesc(
             Integer idDestinatario, String estadoEnvio);
 
-    // Comprueba si ya existe una notificación para usuario, alerta y canal.
+    // Evita duplicar la notificación inicial por canal.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanal(
             Integer idAlerta, Integer idDestinatario, String canal);
 
-    // Reserva la notificación, incrementa el intento y registra la hora de inicio.
+    // Evita duplicar un aviso de escalamiento del mismo tipo.
+    boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndTipoAviso(
+            Integer idAlerta, Integer idDestinatario, String canal, String tipoAviso);
+
+    // Reserva una notificación pendiente para procesarla una sola vez.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -43,10 +47,9 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             WHERE n.idNotificacion = :idNotificacion
               AND n.estadoEnvio = 'PENDIENTE'
             """)
-    int reservarNotificacion(
-            @Param("idNotificacion") Integer idNotificacion);
+    int reservarNotificacion(@Param("idNotificacion") Integer idNotificacion);
 
-    // Guarda el resultado únicamente si la notificación continúa reservada.
+    // Registra el resultado del envío de una notificación.
     @Modifying
     @Query("""
             UPDATE Notificacion n
@@ -62,20 +65,18 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             @Param("fechaEnvio") LocalDateTime fechaEnvio,
             @Param("resultado") String resultado);
 
-    // Comprueba si existe un aviso para el mismo contacto y fecha programada.
-    // Se utiliza para controlar los reavisos del escalamiento automático.
+    // Conserva la consulta anterior por fecha programada.
     boolean existsByAlerta_IdAlertaAndDestinatario_IdUsuarioAndCanalAndFechaProgramada(
             Integer idAlerta,
             Integer idDestinatario,
             String canal,
             LocalDateTime fechaProgramada);
 
-    // Consulta las notificaciones pendientes cuya fecha programada ya se cumplió.
-    // Carga el destinatario y la alerta para evitar problemas de relaciones LAZY.
-    // Excluye las notificaciones de emergencias que ya no están activas.
+    // Busca notificaciones pendientes de alertas activas.
     @EntityGraph(attributePaths = {"destinatario", "alerta", "alerta.estadoActual"})
     @Query("""
-            SELECT n FROM Notificacion n
+            SELECT n
+            FROM Notificacion n
             WHERE n.estadoEnvio = 'PENDIENTE'
               AND n.fechaProgramada <= :ahora
               AND n.alerta.estadoActual.codigo = 'ACTIVA'
