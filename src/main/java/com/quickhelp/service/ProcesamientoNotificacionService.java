@@ -14,6 +14,7 @@ import java.util.Set; // Identificadores de alertas procesadas.
 @Service
 public class ProcesamientoNotificacionService {
 
+    private static final String TIPO_INICIAL = "INICIAL_SOS";
     private static final String TIPO_ADMIN = "ESCALAMIENTO_ADMIN";
     private static final String TIPO_REAVISO = "REAVISO_RED";
 
@@ -75,8 +76,8 @@ public class ProcesamientoNotificacionService {
                 } else {
                     String tokenFcm = notificacion.getDestinatario().getTokenFcm();
 
-                    // Identifica el tipo de notificación antes de finalizarla.
-                    String tipoAviso = notificacion.getResultado();
+                    // El tipo de aviso permanece separado del resultado del envío.
+                    String tipoAviso = notificacion.getTipoAviso();
 
                     String titulo = "¡Alerta de emergencia!";
                     String mensaje = "Un integrante de tu red de apoyo necesita asistencia.";
@@ -87,6 +88,8 @@ public class ProcesamientoNotificacionService {
                     } else if (TIPO_REAVISO.equals(tipoAviso)) {
                         titulo = "¡Recordatorio de emergencia!";
                         mensaje = "La alerta SOS continúa activa y necesita asistencia.";
+                    } else if (TIPO_INICIAL.equals(tipoAviso) || tipoAviso == null) {
+                        // Conserva el mensaje inicial para notificaciones anteriores.
                     }
 
                     // Envía la notificación mediante Firebase Cloud Messaging.
@@ -140,7 +143,7 @@ public class ProcesamientoNotificacionService {
 
     // Comprueba que la alerta siga activa antes de enviar.
     private boolean alertaActiva(Integer idAlerta) {
-
-        return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(idAlerta, "ACTIVA");
+        return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(
+                idAlerta, "ACTIVA");
     }
 }
