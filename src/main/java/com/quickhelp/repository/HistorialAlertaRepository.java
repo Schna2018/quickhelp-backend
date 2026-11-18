@@ -1,12 +1,16 @@
 
 package com.quickhelp.repository;
 
-import com.quickhelp.entity.HistorialAlerta; // Entidad del historial.
-import java.util.List; // Colección de registros.
+import com.quickhelp.entity.HistorialAlerta; // Entidad de historial.
+import java.util.List; // Listado de eventos.
 import org.springframework.data.jpa.repository.JpaRepository; // Operaciones JPA.
+import org.springframework.stereotype.Repository; // Repositorio Spring.
 
-public interface HistorialAlertaRepository extends JpaRepository<HistorialAlerta, Integer> {
+@Repository // Acceso al historial persistido en PostgreSQL.
+public interface HistorialAlertaRepository
+        extends JpaRepository<HistorialAlerta, Integer> {
 
-    // Consulta el historial de una alerta, desde el evento más reciente.
-    List<HistorialAlerta> findByAlerta_IdAlertaOrderByFechaHoraDesc(Integer idAlerta);
+    // Obtiene los eventos de una alerta en orden cronológico.
+    List<HistorialAlerta> findByAlerta_IdAlertaOrderByFechaHoraAsc(
+            Integer idAlerta);
 }
