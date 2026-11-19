@@ -48,6 +48,16 @@ public class AlertaController {
         return alertaService.listarAlertasAdministracion(authentication);
     }
 
+    // Consulta el historial real de una emergencia para el administrador.
+    @GetMapping("/administracion/{idAlerta}/historial")
+    public List<Map<String, Object>> consultarHistorialAdministracion(
+            @PathVariable Integer idAlerta,
+            Authentication authentication) {
+
+        return alertaService.consultarHistorialAdministracion(
+                idAlerta, authentication);
+    }
+
     // Consulta las alertas del adulto mayor autenticado.
     @GetMapping
     public List<AlertaResponseDTO> listarAlertas(Authentication authentication) {
