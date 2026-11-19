@@ -51,12 +51,31 @@ public class NotificacionChatEventListener {
             return;
         }
 
+        if (tokens.isEmpty()) return;
+
+        // Muestra el autor y el comienzo del mensaje, como en una app de mensajería.
+        String titulo = "Nuevo mensaje de Quick Help";
+        String cuerpo = "Abre Quick Help para leer el mensaje.";
+        try {
+            var datos = mensajeRepository.buscarDatosAviso(evento.idMensaje()).orElse(null);
+            if (datos != null) {
+                if (datos.getNombreAutor() != null && !datos.getNombreAutor().isBlank()) {
+                    titulo = datos.getNombreAutor().trim();
+                }
+                if (datos.getTexto() != null && !datos.getTexto().isBlank()) {
+                    cuerpo = resumir(datos.getTexto());
+                }
+            }
+        } catch (DataAccessException e) {
+            logger.warn("No se pudo leer el contenido del mensaje {}", evento.idMensaje());
+        }
+
         for (String token : tokens) {
             try {
                 firebaseMessagingService.enviarMensajeChat(
                         token, evento.idAlerta(), evento.idMensaje(),
-                        "Nuevo mensaje de Quick Help",
-                        "Abre Quick Help para leer el mensaje.");
+                        titulo,
+                        cuerpo);
             } catch (FirebaseMessagingException e) {
                 // Un token rechazado no impide avisar a las demás personas.
                 logger.warn("Firebase rechazó un aviso del mensaje {}: {} / {}",
@@ -66,5 +85,13 @@ public class NotificacionChatEventListener {
                         evento.idMensaje(), e.getClass().getSimpleName());
             }
         }
+    }
+
+    // Une las líneas y recorta textos largos a unos 100 caracteres.
+    private static String resumir(String texto) {
+        String limpio = texto.strip().replaceAll("\\s+", " ");
+        // Cuenta caracteres completos para no cortar un emoji por la mitad.
+        if (limpio.codePointCount(0, limpio.length()) <= 100) return limpio;
+        return limpio.substring(0, limpio.offsetByCodePoints(0, 99)).stripTrailing() + "…";
     }
 }

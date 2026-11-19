@@ -65,4 +65,19 @@ public interface MensajeAlertaRepository
               )
             """)
     List<String> buscarTokensParaAviso(@Param("idMensaje") Integer idMensaje);
+
+    // Datos que muestra la notificación de un mensaje nuevo.
+    interface DatosAvisoMensaje {
+        String getNombreAutor();
+        String getTexto();
+    }
+
+    // Consulta solo el autor y el texto del mensaje.
+    @Query("""
+            SELECT mensaje.autor.nombreApellido AS nombreAutor,
+                   mensaje.texto AS texto
+            FROM MensajeAlerta mensaje
+            WHERE mensaje.idMensaje = :idMensaje
+            """)
+    Optional<DatosAvisoMensaje> buscarDatosAviso(@Param("idMensaje") Integer idMensaje);
 }

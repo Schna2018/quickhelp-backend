@@ -60,4 +60,21 @@ public interface AlertaRepository extends JpaRepository<Alerta, Integer> {
     @Query("SELECT a FROM Alerta a WHERE a.idAlerta = :idAlerta")
     Optional<Alerta> buscarPorIdConBloqueo(
             @Param("idAlerta") Integer idAlerta);
+
+    // Datos que muestran las notificaciones de emergencia.
+    interface DatosAvisoAlerta {
+        String getNombreAdulto();
+        java.time.LocalDateTime getFechaCreacion();
+        Integer getIntervalo();
+    }
+
+    // Consulta solo el nombre y las fechas, sin cargar relaciones perezosas.
+    @Query("""
+            SELECT a.adultoMayor.nombreApellido AS nombreAdulto,
+                   a.fechaCreacion AS fechaCreacion,
+                   a.intervaloEscalamientoMinutos AS intervalo
+            FROM Alerta a
+            WHERE a.idAlerta = :idAlerta
+            """)
+    Optional<DatosAvisoAlerta> buscarDatosAviso(@Param("idAlerta") Integer idAlerta);
 }

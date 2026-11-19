@@ -6,6 +6,7 @@ import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
 import com.quickhelp.repository.AlertaRepository; // Consulta de estados de alertas.
 import com.quickhelp.repository.NotificacionRepository; // Repositorio existente.
 import org.springframework.stereotype.Service; // Servicio Spring Boot.
+import java.time.Duration; // Número del recordatorio.
 import java.time.LocalDateTime; // Fecha y hora del envío.
 import java.util.HashSet; // Evita procesar una alerta varias veces.
 import java.util.List; // Colección de notificaciones.
@@ -41,6 +42,15 @@ public class ProcesamientoNotificacionService {
 
         List<Notificacion> notificaciones = notificacionRepository
                 .findByAlerta_IdAlertaOrderByIdNotificacionDesc(idAlerta);
+
+        // Nombre del adulto y datos para numerar los recordatorios.
+        AlertaRepository.DatosAvisoAlerta datosAlerta =
+                alertaRepository.buscarDatosAviso(idAlerta).orElse(null);
+        String nombre = datosAlerta != null
+                && datosAlerta.getNombreAdulto() != null
+                && !datosAlerta.getNombreAdulto().isBlank()
+                ? datosAlerta.getNombreAdulto().trim()
+                : "Una persona de tu red";
 
         for (Notificacion notificacion : notificaciones) {
 
@@ -78,15 +88,17 @@ public class ProcesamientoNotificacionService {
                     // Identifica el tipo de notificación antes de finalizarla.
                     String tipoAviso = notificacion.getResultado();
 
-                    String titulo = "¡Alerta de emergencia!";
-                    String mensaje = "Un integrante de tu red de apoyo necesita asistencia.";
+                    // Muestra quién pidió ayuda sin necesidad de abrir la app.
+                    String titulo = "🚨 Emergencia de " + nombre;
+                    String mensaje = nombre + " pidió ayuda con el botón SOS. Toca para responder.";
 
                     if (TIPO_ADMIN.equals(tipoAviso)) {
                         titulo = "¡SOS sin atención!";
                         mensaje = "Una emergencia requiere intervención administrativa.";
                     } else if (TIPO_REAVISO.equals(tipoAviso)) {
-                        titulo = "¡Recordatorio de emergencia!";
-                        mensaje = "La alerta SOS continúa activa y necesita asistencia.";
+                        titulo = "🚨 " + nombre + " sigue esperando ayuda";
+                        mensaje = "Recordatorio " + numeroRecordatorio(datosAlerta, notificacion)
+                                + " de 5 · Toca para responder.";
                     }
 
                     // Envía la notificación mediante Firebase Cloud Messaging.
@@ -136,6 +148,23 @@ public class ProcesamientoNotificacionService {
                 procesarPendientes(idAlerta);
             }
         }
+    }
+
+    // Calcula el número del recordatorio (1 a 5) a partir de su hora programada.
+    private long numeroRecordatorio(
+            AlertaRepository.DatosAvisoAlerta datosAlerta, Notificacion notificacion) {
+
+        if (datosAlerta == null || datosAlerta.getFechaCreacion() == null
+                || notificacion.getFechaProgramada() == null) {
+            return 1;
+        }
+
+        int intervalo = datosAlerta.getIntervalo() != null && datosAlerta.getIntervalo() > 0
+                ? datosAlerta.getIntervalo() : 2;
+        long minutos = Duration.between(
+                datosAlerta.getFechaCreacion(), notificacion.getFechaProgramada()).toMinutes();
+
+        return Math.max(1, Math.min(5, minutos / intervalo));
     }
 
     // Comprueba que la alerta siga activa antes de enviar.
