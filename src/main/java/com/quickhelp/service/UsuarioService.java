@@ -9,6 +9,7 @@ import com.quickhelp.repository.RolRepository; // Acceso a los roles.
 import com.quickhelp.repository.UsuarioRepository; // Acceso a los usuarios.
 import java.util.List; // Listas de usuarios.
 import java.util.Optional; // Resultados opcionales.
+import org.springframework.dao.DataIntegrityViolationException; // Errores de integridad referencial.
 import org.springframework.http.HttpStatus; // Estados HTTP.
 import org.springframework.security.crypto.password.PasswordEncoder; // Cifrado de contraseñas.
 import org.springframework.stereotype.Service; // Servicio Spring.
@@ -161,5 +162,27 @@ public class UsuarioService {
 
         usuario.setEstado(false); // Desactivación lógica.
         usuarioRepository.save(usuario); // Conserva el historial.
+    }
+
+    @Transactional // Elimina físicamente un usuario cuando PostgreSQL lo permite.
+    public void eliminarUsuarioDefinitivamente(Integer idUsuario) {
+
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Usuario no encontrado."));
+
+        try {
+            // Borra el registro real, no modifica únicamente su estado.
+            usuarioRepository.delete(usuario);
+
+            // Ejecuta el DELETE para detectar restricciones de PostgreSQL.
+            usuarioRepository.flush();
+
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No se puede eliminar definitivamente este usuario porque tiene registros relacionados.",
+                    e);
+        }
     }
 }
