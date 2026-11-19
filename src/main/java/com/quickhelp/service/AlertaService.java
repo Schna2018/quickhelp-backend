@@ -254,7 +254,7 @@ public class AlertaService {
                 .toList();
     }
 
-    // NUEVO: consulta el historial real de una emergencia para ADMIN.
+    // Consulta el historial real de una emergencia para ADMIN.
     @Transactional(readOnly = true)
     public List<Map<String, Object>> consultarHistorialAdministracion(
             Integer idAlerta,
@@ -262,7 +262,6 @@ public class AlertaService {
 
         Integer idUsuario = obtenerIdAutenticado(authentication);
 
-        // Verifica que el solicitante sea un administrador activo.
         Usuario administrador = usuarioRepository.findById(idUsuario)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Usuario no autorizado."));
@@ -281,7 +280,7 @@ public class AlertaService {
                     HttpStatus.NOT_FOUND, "Alerta no encontrada.");
         }
 
-        // Reutiliza el método existente del repositorio de historial.
+        // Recupera los eventos registrados, del más reciente al más antiguo.
         return historialAlertaRepository
                 .findByAlerta_IdAlertaOrderByFechaHoraDesc(idAlerta)
                 .stream()
@@ -380,6 +379,7 @@ public class AlertaService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Usuario no autorizado."));
 
+        // Exige que la cuenta y su rol estén activos.
         if (!Boolean.TRUE.equals(usuario.getEstado())
                 || usuario.getRol() == null
                 || !Boolean.TRUE.equals(usuario.getRol().getEstado())) {
@@ -389,15 +389,20 @@ public class AlertaService {
 
         Integer idAdulto = alerta.getAdultoMayor().getIdUsuario();
 
+        // El adulto mayor puede consultar su propia emergencia.
         boolean esPropietario = idAdulto.equals(idUsuario)
                 && "ADULTO_MAYOR".equals(usuario.getRol().getCodigo());
 
-        // Conserva los permisos originales de ubicación.
-        if (!esPropietario) {
+        // NUEVO: permite consultar el GPS al administrador activo.
+        boolean esAdministrador = "ADMIN".equals(usuario.getRol().getCodigo());
+
+        // Los asistentes deben conservar su vinculación autorizada.
+        if (!esPropietario && !esAdministrador) {
             redApoyoAutorizacionService.validarAccesoAsistente(
                     idAdulto, authentication);
         }
 
+        // Busca la última ubicación registrada.
         var ubicacionEncontrada = ubicacionRepository
                 .findFirstByAlerta_IdAlertaOrderByFechaHoraDescIdUbicacionDesc(
                         idAlerta);
@@ -456,13 +461,12 @@ public class AlertaService {
 
         EstadoAlerta estadoAnterior = alerta.getEstadoActual();
 
-        // Actualiza la emergencia y asigna al responsable.
         alerta.setEstadoActual(nuevoEstado);
         alerta.setResponsableAtencion(asistente);
         alerta.setFechaAtencion(LocalDateTime.now());
         alertaRepository.save(alerta);
 
-        // Registra el inicio de atención en el historial.
+        // Registra el inicio de atención.
         HistorialAlerta historial = new HistorialAlerta();
         historial.setAlerta(alerta);
         historial.setUsuarioActor(asistente);
@@ -527,13 +531,12 @@ public class AlertaService {
         EstadoAlerta estadoAnterior = alerta.getEstadoActual();
         LocalDateTime fechaCierre = LocalDateTime.now();
 
-        // Actualiza la emergencia.
         alerta.setEstadoActual(estadoResuelta);
         alerta.setFechaCierre(fechaCierre);
         alerta.setObservacionCierre(observacion.trim());
         alertaRepository.save(alerta);
 
-        // Registra la resolución en el historial.
+        // Registra la resolución.
         HistorialAlerta historial = new HistorialAlerta();
         historial.setAlerta(alerta);
         historial.setUsuarioActor(responsable);
