@@ -60,7 +60,7 @@ public class AuthService {
                 .issuer("quickhelp")
                 .subject(usuario.getIdUsuario().toString()) // Identifica al usuario.
                 .issuedAt(ahora)
-                .expiresAt(ahora.plus(2, ChronoUnit.HOURS)) // Token válido durante 2 horas.
+                .expiresAt(ahora.plus(30, ChronoUnit.DAYS)) // La app recuerda la sesión durante 30 días.
                 .claim("roles", java.util.List.of(rol)) // Autoridades para Spring Security.
                 .build();
 
