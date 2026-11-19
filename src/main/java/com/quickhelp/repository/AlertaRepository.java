@@ -1,3 +1,4 @@
+
 package com.quickhelp.repository;
 
 import com.quickhelp.entity.Alerta; // Entidad que representa una emergencia.
@@ -77,4 +78,20 @@ public interface AlertaRepository extends JpaRepository<Alerta, Integer> {
             WHERE a.idAlerta = :idAlerta
             """)
     Optional<DatosAvisoAlerta> buscarDatosAviso(@Param("idAlerta") Integer idAlerta);
+
+    /**
+     * PROTECCIÓN DE ELIMINACIÓN DEFINITIVA.
+     * Comprueba si un usuario participa en alguna emergencia registrada.
+     * Incluye emergencias activas, resueltas, rechazadas y cerradas.
+     * No modifica ni elimina información histórica.
+     */
+    @Query("""
+            SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END
+            FROM Alerta a
+            WHERE a.adultoMayor.idUsuario = :idUsuario
+               OR a.responsableAtencion.idUsuario = :idUsuario
+               OR a.operadorAsignado.idUsuario = :idUsuario
+            """)
+    boolean existeAlertaRelacionadaConUsuario(
+            @Param("idUsuario") Integer idUsuario);
 }
