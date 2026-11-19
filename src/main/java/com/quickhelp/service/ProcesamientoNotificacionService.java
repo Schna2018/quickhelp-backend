@@ -30,6 +30,7 @@ public class ProcesamientoNotificacionService {
             FirebaseMessagingService firebaseMessagingService,
             NotificacionReservaService notificacionReservaService,
             NotificacionFinalizacionService notificacionFinalizacionService) {
+
         this.notificacionRepository = notificacionRepository;
         this.alertaRepository = alertaRepository;
         this.firebaseMessagingService = firebaseMessagingService;
@@ -43,9 +44,10 @@ public class ProcesamientoNotificacionService {
         List<Notificacion> notificaciones = notificacionRepository
                 .findByAlerta_IdAlertaOrderByIdNotificacionDesc(idAlerta);
 
-        // Nombre del adulto y datos para numerar los recordatorios.
+        // Obtiene los datos necesarios para construir los avisos.
         AlertaRepository.DatosAvisoAlerta datosAlerta =
                 alertaRepository.buscarDatosAviso(idAlerta).orElse(null);
+
         String nombre = datosAlerta != null
                 && datosAlerta.getNombreAdulto() != null
                 && !datosAlerta.getNombreAdulto().isBlank()
@@ -54,7 +56,7 @@ public class ProcesamientoNotificacionService {
 
         for (Notificacion notificacion : notificaciones) {
 
-            // Solo procesa notificaciones pendientes.
+            // Procesa únicamente las notificaciones pendientes.
             if (!"PENDIENTE".equals(notificacion.getEstadoEnvio())) {
                 continue;
             }
@@ -65,12 +67,12 @@ public class ProcesamientoNotificacionService {
                 continue;
             }
 
-            // No envía avisos cuando la alerta deja de estar activa.
+            // No procesa avisos de emergencias que dejaron de estar activas.
             if (!alertaActiva(idAlerta)) {
                 continue;
             }
 
-            // Reserva el envío para impedir procesamientos simultáneos.
+            // Reserva el envío para evitar procesamientos simultáneos.
             if (!notificacionReservaService.reservar(notificacion.getIdNotificacion())) {
                 continue;
             }
@@ -79,51 +81,91 @@ public class ProcesamientoNotificacionService {
             String resultado;
 
             try {
-                // Comprueba nuevamente el estado antes del envío.
+
+                // Comprueba nuevamente que la emergencia esté activa.
                 if (!alertaActiva(idAlerta)) {
+
+                    // Conserva el estado compatible con el flujo actual.
                     resultado = "Envío omitido: la alerta ya no está activa.";
+
+                } else if (notificacion.getDestinatario() == null) {
+
+                    // Identifica registros sin un destinatario asociado.
+                    resultado = "La notificación no tiene destinatario registrado.";
+
                 } else {
+
                     String tokenFcm = notificacion.getDestinatario().getTokenFcm();
 
-                    // Identifica el tipo de notificación antes de finalizarla.
-                    String tipoAviso = notificacion.getResultado();
+                    // Verifica que el dispositivo tenga un token FCM.
+                    if (tokenFcm == null || tokenFcm.isBlank()) {
 
-                    // Muestra quién pidió ayuda sin necesidad de abrir la app.
-                    String titulo = "🚨 Emergencia de " + nombre;
-                    String mensaje = nombre + " pidió ayuda con el botón SOS. Toca para responder.";
+                        resultado = "El destinatario no tiene token FCM.";
 
-                    if (TIPO_ADMIN.equals(tipoAviso)) {
-                        titulo = "¡SOS sin atención!";
-                        mensaje = "Una emergencia requiere intervención administrativa.";
-                    } else if (TIPO_REAVISO.equals(tipoAviso)) {
-                        titulo = "🚨 " + nombre + " sigue esperando ayuda";
-                        mensaje = "Recordatorio " + numeroRecordatorio(datosAlerta, notificacion)
-                                + " de 5 · Toca para responder.";
+                    } else {
+
+                        // Recupera el tipo de aviso registrado.
+                        String tipoAviso = notificacion.getResultado();
+
+                        // Construye el mensaje de emergencia normal.
+                        String titulo = "🚨 Emergencia de " + nombre;
+                        String mensaje = nombre
+                                + " pidió ayuda con el botón SOS. Toca para responder.";
+
+                        // Mensaje especial de escalamiento administrativo.
+                        if (TIPO_ADMIN.equals(tipoAviso)) {
+
+                            titulo = "¡SOS sin atención!";
+                            mensaje = "Una emergencia requiere intervención administrativa.";
+
+                        } else if (TIPO_REAVISO.equals(tipoAviso)) {
+
+                            // Mensaje especial para recordatorios de la red.
+                            titulo = "🚨 " + nombre + " sigue esperando ayuda";
+                            mensaje = "Recordatorio "
+                                    + numeroRecordatorio(datosAlerta, notificacion)
+                                    + " de 5 · Toca para responder.";
+                        }
+
+                        // Envía el mensaje mediante Firebase Cloud Messaging.
+                        resultado = firebaseMessagingService.enviarNotificacion(
+                                tokenFcm.trim(),
+                                idAlerta,
+                                titulo,
+                                mensaje);
+
+                        // ENVIADA significa que Firebase aceptó el mensaje.
+                        estado = "ENVIADA";
                     }
-
-                    // Envía la notificación mediante Firebase Cloud Messaging.
-                    resultado = firebaseMessagingService.enviarNotificacion(
-                            tokenFcm,
-                            idAlerta,
-                            titulo,
-                            mensaje);
-
-                    estado = "ENVIADA";
                 }
 
-            } catch (FirebaseMessagingException | RuntimeException e) {
+            } catch (FirebaseMessagingException e) {
+
+                // Conserva el código técnico de Firebase para diagnóstico.
+                resultado = "Firebase FCM: "
+                        + (e.getErrorCode() != null
+                                ? e.getErrorCode().toString() + " - "
+                                : "")
+                        + (e.getMessage() != null
+                                ? e.getMessage()
+                                : e.getClass().getSimpleName());
+
+            } catch (RuntimeException e) {
+
+                // Registra errores inesperados sin marcar el aviso como enviado.
                 resultado = e.getMessage() != null
                         ? e.getMessage()
                         : e.getClass().getSimpleName();
             }
 
-            // Registra el resultado del intento en PostgreSQL.
+            // Guarda el resultado del intento en PostgreSQL.
             boolean finalizada = notificacionFinalizacionService.finalizar(
                     notificacion.getIdNotificacion(),
                     estado,
                     "ENVIADA".equals(estado) ? LocalDateTime.now() : null,
                     resultado);
 
+            // Informa si no se pudo finalizar la notificación reservada.
             if (!finalizada) {
                 throw new IllegalStateException(
                         "No se pudo finalizar la notificación "
@@ -138,10 +180,11 @@ public class ProcesamientoNotificacionService {
         List<Notificacion> notificaciones = notificacionRepository
                 .buscarPendientesProgramadas(LocalDateTime.now());
 
-        // Evita consultar repetidamente la misma alerta durante el ciclo.
+        // Evita procesar repetidamente la misma alerta durante el ciclo.
         Set<Integer> alertasProcesadas = new HashSet<>();
 
         for (Notificacion notificacion : notificaciones) {
+
             Integer idAlerta = notificacion.getAlerta().getIdAlerta();
 
             if (alertasProcesadas.add(idAlerta)) {
@@ -150,26 +193,36 @@ public class ProcesamientoNotificacionService {
         }
     }
 
-    // Calcula el número del recordatorio (1 a 5) a partir de su hora programada.
+    // Calcula el número del recordatorio (1 a 5).
     private long numeroRecordatorio(
-            AlertaRepository.DatosAvisoAlerta datosAlerta, Notificacion notificacion) {
+            AlertaRepository.DatosAvisoAlerta datosAlerta,
+            Notificacion notificacion) {
 
-        if (datosAlerta == null || datosAlerta.getFechaCreacion() == null
+        if (datosAlerta == null
+                || datosAlerta.getFechaCreacion() == null
                 || notificacion.getFechaProgramada() == null) {
             return 1;
         }
 
-        int intervalo = datosAlerta.getIntervalo() != null && datosAlerta.getIntervalo() > 0
-                ? datosAlerta.getIntervalo() : 2;
-        long minutos = Duration.between(
-                datosAlerta.getFechaCreacion(), notificacion.getFechaProgramada()).toMinutes();
+        // Obtiene el intervalo configurado para los recordatorios.
+        int intervalo = datosAlerta.getIntervalo() != null
+                && datosAlerta.getIntervalo() > 0
+                ? datosAlerta.getIntervalo()
+                : 2;
 
+        // Calcula los minutos desde la creación de la emergencia.
+        long minutos = Duration.between(
+                datosAlerta.getFechaCreacion(),
+                notificacion.getFechaProgramada()).toMinutes();
+
+        // Limita el número del recordatorio entre 1 y 5.
         return Math.max(1, Math.min(5, minutos / intervalo));
     }
 
-    // Comprueba que la alerta siga activa antes de enviar.
+    // Comprueba que la emergencia continúe activa.
     private boolean alertaActiva(Integer idAlerta) {
 
-        return alertaRepository.existsByIdAlertaAndEstadoActual_Codigo(idAlerta, "ACTIVA");
+        return alertaRepository
+                .existsByIdAlertaAndEstadoActual_Codigo(idAlerta, "ACTIVA");
     }
 }
