@@ -14,17 +14,17 @@ import com.quickhelp.repository.AlertaRepository; // Acceso a alertas.
 import com.quickhelp.repository.AuditoriaRepository; // Acceso a auditoría.
 import com.quickhelp.repository.EstadoAlertaRepository; // Acceso a estados.
 import com.quickhelp.repository.HistorialAlertaRepository; // Acceso al historial.
-import com.quickhelp.repository.ParametroSistemaRepository; // Configuración del intervalo SOS.
+import com.quickhelp.repository.ParametroSistemaRepository; // Parámetros SOS.
 import com.quickhelp.repository.UbicacionRepository; // Acceso a ubicaciones.
 import com.quickhelp.repository.UsuarioRepository; // Acceso a usuarios.
 import java.math.BigDecimal; // Validación de coordenadas.
 import java.time.LocalDateTime; // Fecha y hora.
 import java.util.LinkedHashMap; // Respuesta JSON ordenada.
-import java.util.List; // Listado de alertas.
-import java.util.Map; // Datos de ubicación.
-import org.springframework.context.ApplicationEventPublisher; // Eventos Spring.
+import java.util.List; // Listados.
+import java.util.Map; // Datos JSON.
+import org.springframework.context.ApplicationEventPublisher; // Eventos.
 import org.springframework.http.HttpStatus; // Estados HTTP.
-import org.springframework.security.core.Authentication; // Usuario autenticado.
+import org.springframework.security.core.Authentication; // Autenticación.
 import org.springframework.stereotype.Service; // Servicio Spring.
 import org.springframework.transaction.annotation.Transactional; // Transacciones.
 import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
@@ -40,8 +40,8 @@ public class AlertaService {
     private final RedApoyoAutorizacionService redApoyoAutorizacionService;
     private final NotificacionService notificacionService;
     private final ApplicationEventPublisher eventPublisher;
-    private final AuditoriaRepository auditoriaRepository; // Guarda acciones auditadas.
-    private final ParametroSistemaRepository parametroSistemaRepository; // Consulta parámetros del sistema.
+    private final AuditoriaRepository auditoriaRepository;
+    private final ParametroSistemaRepository parametroSistemaRepository;
 
     // Inyecta los repositorios y servicios existentes.
     public AlertaService(
@@ -82,7 +82,7 @@ public class AlertaService {
 
         Integer idAdulto = obtenerIdAutenticado(authentication);
 
-        // Coordina las solicitudes del mismo adulto aunque lleguen juntas.
+        // Bloquea al usuario para coordinar solicitudes simultáneas.
         Usuario adulto = usuarioRepository.buscarPorIdConBloqueo(idAdulto)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado."));
@@ -92,33 +92,24 @@ public class AlertaService {
                 || adulto.getRol() == null
                 || !Boolean.TRUE.equals(adulto.getRol().getEstado())
                 || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
                     "Solo un adulto mayor activo puede generar alertas.");
         }
 
-        validarCoordenadas(request); // GPS opcional, pero válido si se envía.
+        validarCoordenadas(request);
 
-        // Busca la emergencia abierta más reciente.
-        // El método del repositorio debe llevar @Lock(PESSIMISTIC_WRITE).
+        // Busca una emergencia abierta del mismo adulto.
         var emergenciaAbierta = alertaRepository
                 .findFirstByAdultoMayor_IdUsuarioAndEstadoActual_CodigoInOrderByFechaCreacionDescIdAlertaDesc(
-                        idAdulto,
-                        List.of("ACTIVA", "EN_ATENCION"));
+                        idAdulto, List.of("ACTIVA", "EN_ATENCION"));
 
         if (emergenciaAbierta.isPresent()) {
             Alerta existente = emergenciaAbierta.get();
-
-            // Agrega la nueva ubicación y conserva las lecturas anteriores.
             guardarUbicacion(existente, request);
-
-            // Mantiene el estado, la fecha de creación y el responsable.
-            // El mensaje al grupo se incorporará cuando exista el chat backend.
             return existente.getIdAlerta();
         }
 
-        // Recupera el estado inicial de la nueva emergencia.
         EstadoAlerta estadoInicial = estadoAlertaRepository.findByCodigo("ACTIVA")
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -133,8 +124,6 @@ public class AlertaService {
         alerta.setIntervaloEscalamientoMinutos(obtenerIntervaloEscalamientoMinutos());
 
         Alerta alertaGuardada = alertaRepository.save(alerta);
-
-        // Registra las coordenadas si el teléfono las proporcionó.
         guardarUbicacion(alertaGuardada, request);
 
         // Registra la creación en el historial.
@@ -147,7 +136,6 @@ public class AlertaService {
         historial.setObservacion(
                 "Emergencia activada manualmente por el adulto mayor.");
         historial.setFechaHora(LocalDateTime.now());
-
         historialAlertaRepository.save(historial);
 
         // Audita la creación de la emergencia.
@@ -157,17 +145,15 @@ public class AlertaService {
                 "CREACION_ALERTA",
                 "El adulto mayor activó una emergencia.");
 
-        // Genera las notificaciones únicamente para una emergencia nueva.
+        // Genera y programa las notificaciones SOS.
         notificacionService.generarNotificacionesEmergencia(alertaGuardada);
-
-        // Publica el evento para procesar las notificaciones tras el commit.
         eventPublisher.publishEvent(
                 new AlertaCreadaEvent(alertaGuardada.getIdAlerta()));
 
         return alertaGuardada.getIdAlerta();
     }
 
-    // Fija el intervalo al crear la alerta; los cambios posteriores no la afectan.
+    // Obtiene el intervalo configurado para el escalamiento SOS.
     private Integer obtenerIntervaloEscalamientoMinutos() {
         return parametroSistemaRepository.findByClave("INTERVALO_ESCALAMIENTO_SOS")
                 .map(parametro -> parametro.getValor())
@@ -183,8 +169,7 @@ public class AlertaService {
                 .orElse(2);
     }
 
-    // Agrega una ubicación sin sobrescribir las lecturas anteriores.
-    // Se ejecuta dentro de la transacción de crearAlerta().
+    // Guarda coordenadas sin sobrescribir ubicaciones anteriores.
     private void guardarUbicacion(
             Alerta alerta,
             CrearAlertaRequestDTO request) {
@@ -201,53 +186,44 @@ public class AlertaService {
         ubicacion.setLongitud(request.longitud());
         ubicacion.setPrecisionMetros(request.precisionMetros());
         ubicacion.setFechaHora(LocalDateTime.now());
-
         ubicacionRepository.save(ubicacion);
     }
 
-    // Comprueba las coordenadas sin exigir que exista GPS.
+    // Valida las coordenadas GPS opcionales.
     private void validarCoordenadas(CrearAlertaRequestDTO request) {
         if (request == null) return;
 
         boolean tieneLatitud = request.latitud() != null;
         boolean tieneLongitud = request.longitud() != null;
 
-        // No permite coordenadas incompletas.
         if (tieneLatitud != tieneLongitud) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Debes enviar latitud y longitud juntas.");
         }
 
-        // La precisión solo puede enviarse con coordenadas.
         if (!tieneLatitud && request.precisionMetros() != null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "La precisión requiere coordenadas GPS.");
         }
 
-        if (!tieneLatitud) return; // La emergencia puede crearse sin GPS.
+        if (!tieneLatitud) return;
 
-        // Comprueba el rango válido de latitud.
         if (request.latitud().compareTo(BigDecimal.valueOf(-90)) < 0
                 || request.latitud().compareTo(BigDecimal.valueOf(90)) > 0) {
-
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Latitud GPS inválida.");
         }
 
-        // Comprueba el rango válido de longitud.
         if (request.longitud().compareTo(BigDecimal.valueOf(-180)) < 0
                 || request.longitud().compareTo(BigDecimal.valueOf(180)) > 0) {
-
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Longitud GPS inválida.");
         }
 
-        // La precisión GPS no puede ser negativa.
         if (request.precisionMetros() != null
                 && request.precisionMetros().signum() < 0) {
-
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Precisión GPS inválida.");
         }
@@ -258,26 +234,76 @@ public class AlertaService {
     public List<AlertaResponseDTO> listarAlertasAdministracion(
             Authentication authentication) {
 
-        Integer idUsuario = obtenerIdAutenticado(authentication); // Identifica al solicitante.
+        Integer idUsuario = obtenerIdAutenticado(authentication);
 
         Usuario administrador = usuarioRepository.findById(idUsuario)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Usuario no autorizado."));
 
-        // Verifica que el administrador y su rol estén activos.
         if (!Boolean.TRUE.equals(administrador.getEstado())
                 || administrador.getRol() == null
                 || !Boolean.TRUE.equals(administrador.getRol().getEstado())
                 || !"ADMIN".equals(administrador.getRol().getCodigo())) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN, "Acceso exclusivo para administradores.");
         }
 
-        // Recupera las emergencias reales desde PostgreSQL.
         return alertaRepository.findAllByOrderByFechaCreacionDesc()
                 .stream()
                 .map(this::convertirAlertaDTO)
+                .toList();
+    }
+
+    // NUEVO: consulta el historial real de una emergencia para ADMIN.
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> consultarHistorialAdministracion(
+            Integer idAlerta,
+            Authentication authentication) {
+
+        Integer idUsuario = obtenerIdAutenticado(authentication);
+
+        // Verifica que el solicitante sea un administrador activo.
+        Usuario administrador = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+
+        if (!Boolean.TRUE.equals(administrador.getEstado())
+                || administrador.getRol() == null
+                || !Boolean.TRUE.equals(administrador.getRol().getEstado())
+                || !"ADMIN".equals(administrador.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Acceso exclusivo para administradores.");
+        }
+
+        // Comprueba que la emergencia exista en PostgreSQL.
+        if (!alertaRepository.existsById(idAlerta)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Alerta no encontrada.");
+        }
+
+        // Reutiliza el método existente del repositorio de historial.
+        return historialAlertaRepository
+                .findByAlerta_IdAlertaOrderByFechaHoraDesc(idAlerta)
+                .stream()
+                .map(historial -> {
+                    Map<String, Object> evento = new LinkedHashMap<>();
+                    evento.put("accion", historial.getAccion());
+                    evento.put("observacion", historial.getObservacion());
+                    evento.put("fechaHora", historial.getFechaHora());
+                    evento.put("idUsuarioActor",
+                            historial.getUsuarioActor() != null
+                                    ? historial.getUsuarioActor().getIdUsuario()
+                                    : null);
+                    evento.put("estadoAnterior",
+                            historial.getEstadoAnterior() != null
+                                    ? historial.getEstadoAnterior().getCodigo()
+                                    : null);
+                    evento.put("estadoNuevo",
+                            historial.getEstadoNuevo() != null
+                                    ? historial.getEstadoNuevo().getCodigo()
+                                    : null);
+                    return evento;
+                })
                 .toList();
     }
 
@@ -292,12 +318,10 @@ public class AlertaService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado."));
 
-        // Verifica que el usuario y su rol estén activos.
         if (!Boolean.TRUE.equals(adulto.getEstado())
                 || adulto.getRol() == null
                 || !Boolean.TRUE.equals(adulto.getRol().getEstado())
                 || !"ADULTO_MAYOR".equals(adulto.getRol().getCodigo())) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
                     "Solo el adulto mayor puede consultar sus alertas.");
@@ -348,12 +372,10 @@ public class AlertaService {
 
         Integer idUsuario = obtenerIdAutenticado(authentication);
 
-        // Busca la emergencia solicitada.
         Alerta alerta = alertaRepository.findById(idAlerta)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Alerta no encontrada."));
 
-        // Comprueba que el usuario tenga una cuenta y un rol activos.
         Usuario usuario = usuarioRepository.findById(idUsuario)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Usuario no autorizado."));
@@ -361,35 +383,30 @@ public class AlertaService {
         if (!Boolean.TRUE.equals(usuario.getEstado())
                 || usuario.getRol() == null
                 || !Boolean.TRUE.equals(usuario.getRol().getEstado())) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN, "Usuario inactivo o sin rol válido.");
         }
 
         Integer idAdulto = alerta.getAdultoMayor().getIdUsuario();
 
-        // El adulto mayor propietario puede consultar su propia alerta.
         boolean esPropietario = idAdulto.equals(idUsuario)
                 && "ADULTO_MAYOR".equals(usuario.getRol().getCodigo());
 
-        // Si no es propietario, debe ser un asistente vinculado.
+        // Conserva los permisos originales de ubicación.
         if (!esPropietario) {
             redApoyoAutorizacionService.validarAccesoAsistente(
                     idAdulto, authentication);
         }
 
-        // Busca la ubicación más reciente de la emergencia.
         var ubicacionEncontrada = ubicacionRepository
                 .findFirstByAlerta_IdAlertaOrderByFechaHoraDescIdUbicacionDesc(
                         idAlerta);
 
-        // Prepara una respuesta que admite valores nulos.
         Map<String, Object> respuesta = new LinkedHashMap<>();
         respuesta.put("idAlerta", idAlerta);
         respuesta.put("disponible", ubicacionEncontrada.isPresent());
 
         if (ubicacionEncontrada.isEmpty()) {
-            // La emergencia existe, pero no tiene coordenadas registradas.
             respuesta.put("latitud", null);
             respuesta.put("longitud", null);
             respuesta.put("precisionMetros", null);
@@ -398,7 +415,6 @@ public class AlertaService {
         }
 
         Ubicacion ubicacion = ubicacionEncontrada.get();
-
         respuesta.put("latitud", ubicacion.getLatitud());
         respuesta.put("longitud", ubicacion.getLongitud());
         respuesta.put("precisionMetros", ubicacion.getPrecisionMetros());
@@ -415,12 +431,10 @@ public class AlertaService {
 
         Integer idAsistente = obtenerIdAutenticado(authentication);
 
-        // Bloquea la alerta para evitar atenciones simultáneas.
         Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Alerta no encontrada."));
 
-        // Comprueba que el asistente esté vinculado al adulto mayor.
         redApoyoAutorizacionService.validarAccesoAsistente(
                 alerta.getAdultoMayor().getIdUsuario(), authentication);
 
@@ -430,7 +444,6 @@ public class AlertaService {
                     "La alerta no está disponible para iniciar atención.");
         }
 
-        // Obtiene el estado EN_ATENCION desde PostgreSQL.
         EstadoAlerta nuevoEstado = estadoAlertaRepository
                 .findByCodigo("EN_ATENCION")
                 .orElseThrow(() -> new ResponseStatusException(
@@ -443,11 +456,10 @@ public class AlertaService {
 
         EstadoAlerta estadoAnterior = alerta.getEstadoActual();
 
-        // Actualiza el estado y asigna al responsable.
+        // Actualiza la emergencia y asigna al responsable.
         alerta.setEstadoActual(nuevoEstado);
         alerta.setResponsableAtencion(asistente);
         alerta.setFechaAtencion(LocalDateTime.now());
-
         alertaRepository.save(alerta);
 
         // Registra el inicio de atención en el historial.
@@ -460,10 +472,8 @@ public class AlertaService {
         historial.setObservacion(
                 "El asistente inició la atención de la emergencia.");
         historial.setFechaHora(LocalDateTime.now());
-
         historialAlertaRepository.save(historial);
 
-        // Audita el inicio de atención.
         registrarAuditoria(
                 asistente,
                 alerta.getIdAlerta(),
@@ -471,7 +481,7 @@ public class AlertaService {
                 "El asistente inició la atención de la emergencia.");
     }
 
-    // Conserva la lógica existente de cierre por el asistente responsable.
+    // Permite resolver una emergencia al asistente responsable.
     @Transactional
     public void resolverAlerta(
             Integer idAlerta,
@@ -480,30 +490,25 @@ public class AlertaService {
 
         Integer idAsistente = obtenerIdAutenticado(authentication);
 
-        // Exige una observación para documentar la resolución.
         if (observacion == null || observacion.isBlank()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Debes indicar una observación de cierre.");
         }
 
-        // Bloquea la alerta durante el cierre.
         Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Alerta no encontrada."));
 
         Usuario responsable = alerta.getResponsableAtencion();
 
-        // Solo el asistente asignado puede resolver la emergencia.
         if (responsable == null
                 || !responsable.getIdUsuario().equals(idAsistente)) {
-
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
                     "No eres el responsable de esta alerta.");
         }
 
-        // Comprueba que la vinculación siga activa.
         redApoyoAutorizacionService.validarAccesoAsistente(
                 alerta.getAdultoMayor().getIdUsuario(), authentication);
 
@@ -513,7 +518,6 @@ public class AlertaService {
                     "La alerta no se encuentra en atención.");
         }
 
-        // Recupera el estado final desde PostgreSQL.
         EstadoAlerta estadoResuelta = estadoAlertaRepository
                 .findByCodigo("RESUELTA")
                 .orElseThrow(() -> new ResponseStatusException(
@@ -527,7 +531,6 @@ public class AlertaService {
         alerta.setEstadoActual(estadoResuelta);
         alerta.setFechaCierre(fechaCierre);
         alerta.setObservacionCierre(observacion.trim());
-
         alertaRepository.save(alerta);
 
         // Registra la resolución en el historial.
@@ -539,10 +542,8 @@ public class AlertaService {
         historial.setAccion("RESOLUCION_ALERTA");
         historial.setObservacion(observacion.trim());
         historial.setFechaHora(fechaCierre);
-
         historialAlertaRepository.save(historial);
 
-        // Audita la resolución de la emergencia.
         registrarAuditoria(
                 responsable,
                 alerta.getIdAlerta(),
@@ -587,13 +588,12 @@ public class AlertaService {
             String detalle) {
 
         Auditoria auditoria = new Auditoria();
-        auditoria.setUsuario(usuario); // Usuario responsable.
-        auditoria.setEntidad("alerta"); // Entidad afectada.
-        auditoria.setIdRegistro(idAlerta); // ID de la emergencia.
-        auditoria.setAccion(accion); // Acción realizada.
-        auditoria.setDetalle(detalle); // Descripción del evento.
-        auditoria.setFechaHora(LocalDateTime.now()); // Fecha del registro.
-
+        auditoria.setUsuario(usuario);
+        auditoria.setEntidad("alerta");
+        auditoria.setIdRegistro(idAlerta);
+        auditoria.setAccion(accion);
+        auditoria.setDetalle(detalle);
+        auditoria.setFechaHora(LocalDateTime.now());
         auditoriaRepository.save(auditoria);
     }
 }
