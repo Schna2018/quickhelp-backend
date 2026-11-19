@@ -393,7 +393,7 @@ public class AlertaService {
         boolean esPropietario = idAdulto.equals(idUsuario)
                 && "ADULTO_MAYOR".equals(usuario.getRol().getCodigo());
 
-        // NUEVO: permite consultar el GPS al administrador activo.
+        // Permite consultar el GPS al administrador activo.
         boolean esAdministrador = "ADMIN".equals(usuario.getRol().getCodigo());
 
         // Los asistentes deben conservar su vinculación autorizada.
@@ -552,6 +552,87 @@ public class AlertaService {
                 alerta.getIdAlerta(),
                 "RESOLUCION_ALERTA",
                 "El asistente resolvió la emergencia.");
+    }
+
+    // Permite al administrador finalizar una emergencia activa o en atención.
+    @Transactional
+    public void resolverAlertaAdministracion(
+            Integer idAlerta,
+            String observacion,
+            Authentication authentication) {
+
+        Integer idAdministrador = obtenerIdAutenticado(authentication);
+
+        // Exige una observación para justificar el cierre administrativo.
+        if (observacion == null || observacion.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Debes indicar una observación de cierre.");
+        }
+
+        // Comprueba que el administrador y su rol estén activos.
+        Usuario administrador = usuarioRepository.findById(idAdministrador)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+
+        if (!Boolean.TRUE.equals(administrador.getEstado())
+                || administrador.getRol() == null
+                || !Boolean.TRUE.equals(administrador.getRol().getEstado())
+                || !"ADMIN".equals(administrador.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Acceso exclusivo para administradores.");
+        }
+
+        // Bloquea la emergencia para evitar cierres simultáneos.
+        Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Alerta no encontrada."));
+
+        EstadoAlerta estadoAnterior = alerta.getEstadoActual();
+        String codigoAnterior = estadoAnterior.getCodigo();
+
+        // Solo se pueden cerrar emergencias todavía abiertas.
+        if (!"ACTIVA".equals(codigoAnterior)
+                && !"EN_ATENCION".equals(codigoAnterior)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "La emergencia ya está cerrada o no admite cierre administrativo.");
+        }
+
+        EstadoAlerta estadoResuelta = estadoAlertaRepository
+                .findByCodigo("RESUELTA")
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "No existe el estado RESUELTA."));
+
+        LocalDateTime fechaCierre = LocalDateTime.now();
+        String observacionFinal = observacion.trim();
+
+        // Conserva el responsable de atención y registra el cierre.
+        alerta.setEstadoActual(estadoResuelta);
+        alerta.setFechaCierre(fechaCierre);
+        alerta.setObservacionCierre(observacionFinal);
+        alertaRepository.save(alerta);
+
+        // Identifica al administrador que realizó la operación.
+        HistorialAlerta historial = new HistorialAlerta();
+        historial.setAlerta(alerta);
+        historial.setUsuarioActor(administrador);
+        historial.setEstadoAnterior(estadoAnterior);
+        historial.setEstadoNuevo(estadoResuelta);
+        historial.setAccion("RESOLUCION_ADMINISTRATIVA");
+        historial.setObservacion(observacionFinal);
+        historial.setFechaHora(fechaCierre);
+        historialAlertaRepository.save(historial);
+
+        // Conserva una traza adicional de la operación administrativa.
+        registrarAuditoria(
+                administrador,
+                alerta.getIdAlerta(),
+                "RESOLUCION_ADMINISTRATIVA",
+                "El administrador finalizó la emergencia. Motivo: "
+                        + observacionFinal);
     }
 
     // Obtiene el identificador del usuario desde el JWT.
