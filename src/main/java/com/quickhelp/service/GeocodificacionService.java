@@ -25,6 +25,7 @@ public class GeocodificacionService {
 
     private static final long PAUSA_POR_CUOTA_MS = 60_000L;
     private static final long ESPERA_ENTRE_CONSULTAS_MS = 1_000L;
+    private static final long ESPERA_MAXIMA_TURNO_MS = 5_000L;
     private static final int MAXIMO_GUARDADAS = 500;
     // OpenStreetMap pide identificar la aplicación en cada consulta.
     private static final String AGENTE = "QuickHelp/1.0 (+https://github.com/Schna2018/quickhelp-backend)";
@@ -33,7 +34,7 @@ public class GeocodificacionService {
     private final RestClient clienteRespaldo;
     private final AtomicLong reintentarDesde = new AtomicLong();
     private final AtomicLong reintentarRespaldoDesde = new AtomicLong();
-    private final AtomicLong ultimaConsultaRespaldo = new AtomicLong();
+    private long proximoTurnoRespaldo; // Protegido por reservarTurnoRespaldo().
     // Direcciones ya resueltas: un punto fijo no cambia de dirección.
     private final Map<String, JsonNode> guardadas = new ConcurrentHashMap<>();
 
@@ -69,7 +70,7 @@ public class GeocodificacionService {
         // Primero Google; si no responde con datos, se usa OpenStreetMap.
         JsonNode resultado = buscarEnGoogle(latitud, longitud);
         if (resultado == null) {
-            resultado = buscarEnOpenStreetMap(latitud, longitud);
+            resultado = buscarEnOpenStreetMap(latitud, longitud, llave);
         }
 
         // Guarda solo direcciones con datos para poder reintentar las vacías.
@@ -112,16 +113,16 @@ public class GeocodificacionService {
         return null;
     }
 
-    private JsonNode buscarEnOpenStreetMap(BigDecimal latitud, BigDecimal longitud) {
-        long ahora = System.currentTimeMillis();
-        if (ahora < reintentarRespaldoDesde.get()) {
+    private JsonNode buscarEnOpenStreetMap(BigDecimal latitud, BigDecimal longitud, String llave) {
+        if (System.currentTimeMillis() < reintentarRespaldoDesde.get()) {
             throw limiteDeCuota();
         }
-        // Respeta el máximo de una consulta por segundo de OpenStreetMap.
-        long anterior = ultimaConsultaRespaldo.get();
-        if (ahora - anterior < ESPERA_ENTRE_CONSULTAS_MS
-                || !ultimaConsultaRespaldo.compareAndSet(anterior, ahora)) {
-            throw limiteDeCuota();
+        esperarTurnoRespaldo();
+
+        // Otra consulta pudo resolver el mismo punto mientras se esperaba el turno.
+        JsonNode guardada = guardadas.get(llave);
+        if (guardada != null) {
+            return guardada;
         }
 
         try {
@@ -147,6 +148,31 @@ public class GeocodificacionService {
 
         throw new ResponseStatusException(
                 HttpStatus.BAD_GATEWAY, "El servicio de direcciones devolvió una respuesta inválida.");
+    }
+
+    // Reserva un turno de un segundo para respetar el límite de OpenStreetMap.
+    private synchronized long reservarTurnoRespaldo() {
+        long ahora = System.currentTimeMillis();
+        long turno = Math.max(ahora, proximoTurnoRespaldo);
+        // Si la fila es muy larga, responde 429 en vez de dejar esperando la petición.
+        if (turno - ahora > ESPERA_MAXIMA_TURNO_MS) {
+            throw limiteDeCuota();
+        }
+        proximoTurnoRespaldo = turno + ESPERA_ENTRE_CONSULTAS_MS;
+        return turno;
+    }
+
+    // Espera fuera del bloqueo hasta la hora reservada.
+    private void esperarTurnoRespaldo() {
+        long espera = reservarTurnoRespaldo() - System.currentTimeMillis();
+        if (espera > 0) {
+            try {
+                Thread.sleep(espera);
+            } catch (InterruptedException interrupcion) {
+                Thread.currentThread().interrupt();
+                throw limiteDeCuota();
+            }
+        }
     }
 
     // Mantiene el formato que ya lee la app: results[].addressComponents[] con longText y types.
