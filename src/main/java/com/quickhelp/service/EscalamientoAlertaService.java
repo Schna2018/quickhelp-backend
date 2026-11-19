@@ -10,16 +10,17 @@ import com.quickhelp.repository.AlertaRepository; // Consulta y bloqueo de alert
 import com.quickhelp.repository.NotificacionRepository; // Persistencia de avisos.
 import com.quickhelp.repository.ParametroSistemaRepository; // Parámetros de PostgreSQL.
 import com.quickhelp.repository.RedApoyoRepository; // Consulta de red de apoyo.
-import com.quickhelp.repository.UsuarioRepository; // Consulta de administradores.
+import com.quickhelp.repository.RespuestaAlertaRepository; // Respuestas de cada asistente.
 import org.springframework.beans.factory.annotation.Value; // Configuración de activación.
 import org.springframework.scheduling.annotation.Scheduled; // Revisión automática.
 import org.springframework.stereotype.Service; // Servicio Spring.
 import org.springframework.transaction.PlatformTransactionManager; // Transacciones.
 import org.springframework.transaction.support.TransactionTemplate; // Bloqueo transaccional.
+import java.time.Duration; // Tiempo transcurrido desde la emergencia.
 import java.time.LocalDateTime; // Fechas de programación.
 import java.util.List; // Listados de destinatarios.
 
-@Service // Escala emergencias activas sin atención.
+@Service // Reenvía la emergencia a los asistentes que todavía no responden.
 public class EscalamientoAlertaService {
 
     // Intervalo predeterminado si todavía no existe el parámetro.
@@ -28,14 +29,15 @@ public class EscalamientoAlertaService {
     // Clave del intervalo configurable en PostgreSQL.
     private static final String CLAVE_INTERVALO = "INTERVALO_ESCALAMIENTO_SOS";
 
-    private static final String CODIGO_ADMIN = "ADMIN";
     private static final String TIPO_REAVISO = "REAVISO_RED";
-    private static final String TIPO_ADMIN = "ESCALAMIENTO_ADMIN";
+
+    // Cantidad máxima de reavisos para cada asistente sin respuesta.
+    private static final int MAXIMO_REAVISOS = 5;
 
     private final AlertaRepository alertaRepository;
     private final RedApoyoRepository redApoyoRepository;
     private final NotificacionRepository notificacionRepository;
-    private final UsuarioRepository usuarioRepository;
+    private final RespuestaAlertaRepository respuestaAlertaRepository;
     private final ParametroSistemaRepository parametroRepository;
     private final ProcesamientoNotificacionService procesamientoNotificacionService;
     private final TransactionTemplate transactionTemplate;
@@ -46,7 +48,7 @@ public class EscalamientoAlertaService {
             AlertaRepository alertaRepository,
             RedApoyoRepository redApoyoRepository,
             NotificacionRepository notificacionRepository,
-            UsuarioRepository usuarioRepository,
+            RespuestaAlertaRepository respuestaAlertaRepository,
             ParametroSistemaRepository parametroRepository,
             ProcesamientoNotificacionService procesamientoNotificacionService,
             PlatformTransactionManager transactionManager,
@@ -55,7 +57,7 @@ public class EscalamientoAlertaService {
         this.alertaRepository = alertaRepository;
         this.redApoyoRepository = redApoyoRepository;
         this.notificacionRepository = notificacionRepository;
-        this.usuarioRepository = usuarioRepository;
+        this.respuestaAlertaRepository = respuestaAlertaRepository;
         this.parametroRepository = parametroRepository;
         this.procesamientoNotificacionService = procesamientoNotificacionService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -114,7 +116,7 @@ public class EscalamientoAlertaService {
                 .orElse(INTERVALO_PREDETERMINADO);
     }
 
-    // Genera reavisos secuenciales y aviso final a administradores.
+    // Reenvía la emergencia cada intervalo a quien no ha respondido, hasta 5 veces.
     private void generarEscalamiento(Integer idAlerta) {
 
         // Bloquea la alerta para evitar operaciones simultáneas.
@@ -130,53 +132,39 @@ public class EscalamientoAlertaService {
         if (fechaActivacion == null
                 || alerta.getFechaCreacion().isBefore(fechaActivacion)) return;
 
-        // Lee el intervalo actual de configuración.
-        long intervaloMinutos = obtenerIntervaloMinutos();
+        // Usa el intervalo fijado al crear la alerta o, si falta, el parámetro actual.
+        long intervaloMinutos = alerta.getIntervaloEscalamientoMinutos() != null
+                ? alerta.getIntervaloEscalamientoMinutos()
+                : obtenerIntervaloMinutos();
+
+        // Calcula qué reaviso corresponde ahora (1 a 5).
+        long minutosTranscurridos = Duration.between(
+                alerta.getFechaCreacion(), LocalDateTime.now()).toMinutes();
+        long reaviso = Math.min(minutosTranscurridos / intervaloMinutos, MAXIMO_REAVISOS);
+
+        if (reaviso < 1) return;
+
+        // Programa solo el reaviso vigente para no enviar varios juntos si el servidor despierta tarde.
+        LocalDateTime fechaReaviso = alerta.getFechaCreacion()
+                .plusMinutes(intervaloMinutos * reaviso);
 
         Integer idAdultoMayor = alerta.getAdultoMayor().getIdUsuario();
 
-        // Ordena la red de apoyo por prioridad.
         List<RedApoyo> integrantes = redApoyoRepository
                 .findByAdultoMayor_IdUsuarioOrderByPrioridadAsc(idAdultoMayor);
-
-        int posicion = 0;
-        LocalDateTime ahora = LocalDateTime.now();
 
         for (RedApoyo integrante : integrantes) {
 
             // Omite integrantes deshabilitados.
             if (!Boolean.TRUE.equals(integrante.getEstado())) continue;
 
-            posicion++;
+            Usuario asistente = integrante.getIntegrante();
 
-            // Programa cada reaviso según la prioridad.
-            LocalDateTime fechaReaviso = alerta.getFechaCreacion()
-                    .plusMinutes(intervaloMinutos * posicion);
+            // Cualquier respuesta, incluso "No puedo asistir", detiene sus reavisos.
+            if (respuestaAlertaRepository.existsByAlerta_IdAlertaAndIntegrante_IdUsuario(
+                    idAlerta, asistente.getIdUsuario())) continue;
 
-            if (ahora.isBefore(fechaReaviso)) continue;
-
-            registrarNotificacion(
-                    alerta,
-                    integrante.getIntegrante(),
-                    fechaReaviso,
-                    TIPO_REAVISO);
-        }
-
-        // Escala a administradores después de recorrer la red.
-        LocalDateTime fechaAdministrador = alerta.getFechaCreacion()
-                .plusMinutes(intervaloMinutos * (posicion + 1));
-
-        if (ahora.isBefore(fechaAdministrador)) return;
-
-        List<Usuario> administradores = usuarioRepository
-                .findByRol_CodigoAndEstadoTrue(CODIGO_ADMIN);
-
-        for (Usuario administrador : administradores) {
-            registrarNotificacion(
-                    alerta,
-                    administrador,
-                    fechaAdministrador,
-                    TIPO_ADMIN);
+            registrarNotificacion(alerta, asistente, fechaReaviso, TIPO_REAVISO);
         }
     }
 
