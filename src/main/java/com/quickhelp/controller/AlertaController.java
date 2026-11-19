@@ -58,6 +58,20 @@ public class AlertaController {
                 idAlerta, authentication);
     }
 
+    // Permite al administrador finalizar una emergencia activa o en atención.
+    @PatchMapping("/administracion/{idAlerta}/resolver")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resolverAlertaAdministracion(
+            @PathVariable Integer idAlerta,
+            @RequestBody ResolverAlertaRequestDTO request,
+            Authentication authentication) {
+
+        alertaService.resolverAlertaAdministracion(
+                idAlerta,
+                request.observacion(),
+                authentication);
+    }
+
     // Consulta las alertas del adulto mayor autenticado.
     @GetMapping
     public List<AlertaResponseDTO> listarAlertas(Authentication authentication) {
