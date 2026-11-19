@@ -2,11 +2,15 @@
 package com.quickhelp.service;
 
 import com.quickhelp.entity.Alerta; // Emergencia registrada.
+import com.quickhelp.entity.EstadoAlerta; // Estado PENDIENTE.
+import com.quickhelp.entity.HistorialAlerta; // Registro del escalamiento.
 import com.quickhelp.entity.Notificacion; // Avisos programados.
 import com.quickhelp.entity.ParametroSistema; // Configuración del sistema.
 import com.quickhelp.entity.RedApoyo; // Integrantes de apoyo.
 import com.quickhelp.entity.Usuario; // Administradores y destinatarios.
 import com.quickhelp.repository.AlertaRepository; // Consulta y bloqueo de alertas.
+import com.quickhelp.repository.EstadoAlertaRepository; // Catálogo de estados.
+import com.quickhelp.repository.HistorialAlertaRepository; // Historial de la alerta.
 import com.quickhelp.repository.NotificacionRepository; // Persistencia de avisos.
 import com.quickhelp.repository.ParametroSistemaRepository; // Parámetros de PostgreSQL.
 import com.quickhelp.repository.RedApoyoRepository; // Consulta de red de apoyo.
@@ -34,7 +38,12 @@ public class EscalamientoAlertaService {
     // Cantidad máxima de reavisos para cada asistente sin respuesta.
     private static final int MAXIMO_REAVISOS = 5;
 
+    // Estados en que la emergencia sigue abierta (los reavisos continúan en todos).
+    private static final List<String> ESTADOS_ABIERTOS = List.of("ACTIVA", "PENDIENTE", "EN_ATENCION");
+
     private final AlertaRepository alertaRepository;
+    private final EstadoAlertaRepository estadoAlertaRepository;
+    private final HistorialAlertaRepository historialAlertaRepository;
     private final RedApoyoRepository redApoyoRepository;
     private final NotificacionRepository notificacionRepository;
     private final RespuestaAlertaRepository respuestaAlertaRepository;
@@ -46,6 +55,8 @@ public class EscalamientoAlertaService {
     // Inyecta los servicios y repositorios existentes.
     public EscalamientoAlertaService(
             AlertaRepository alertaRepository,
+            EstadoAlertaRepository estadoAlertaRepository,
+            HistorialAlertaRepository historialAlertaRepository,
             RedApoyoRepository redApoyoRepository,
             NotificacionRepository notificacionRepository,
             RespuestaAlertaRepository respuestaAlertaRepository,
@@ -55,6 +66,8 @@ public class EscalamientoAlertaService {
             @Value("${quickhelp.escalamiento.fecha-activacion:}") String fechaConfigurada) {
 
         this.alertaRepository = alertaRepository;
+        this.estadoAlertaRepository = estadoAlertaRepository;
+        this.historialAlertaRepository = historialAlertaRepository;
         this.redApoyoRepository = redApoyoRepository;
         this.notificacionRepository = notificacionRepository;
         this.respuestaAlertaRepository = respuestaAlertaRepository;
@@ -73,7 +86,7 @@ public class EscalamientoAlertaService {
 
         if (fechaActivacion != null) {
             List<Alerta> alertas = alertaRepository
-                    .findByEstadoActual_CodigoOrderByFechaCreacionDesc("ACTIVA");
+                    .findByEstadoActual_CodigoInOrderByFechaCreacionDesc(ESTADOS_ABIERTOS);
 
             for (Alerta alerta : alertas) {
 
@@ -125,8 +138,9 @@ public class EscalamientoAlertaService {
 
         if (alerta == null || alerta.getFechaCreacion() == null) return;
 
-        // Solo se escalan emergencias que continúan activas.
-        if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())) return;
+        // Solo se procesan emergencias que continúan abiertas.
+        String codigoEstado = alerta.getEstadoActual().getCodigo();
+        if (!ESTADOS_ABIERTOS.contains(codigoEstado)) return;
 
         // Evita escalar emergencias antiguas.
         if (fechaActivacion == null
@@ -136,6 +150,14 @@ public class EscalamientoAlertaService {
         long intervaloMinutos = alerta.getIntervaloEscalamientoMinutos() != null
                 ? alerta.getIntervaloEscalamientoMinutos()
                 : obtenerIntervaloMinutos();
+
+        // Regla de escalamiento (aparte de los reavisos): si sigue ACTIVA al cumplirse
+        // el intervalo, nadie dijo que va y pasa a PENDIENTE para el administrador.
+        if ("ACTIVA".equals(codigoEstado)
+                && Duration.between(alerta.getFechaCreacion(), LocalDateTime.now()).toMinutes()
+                        >= intervaloMinutos) {
+            escalarAPendiente(alerta, intervaloMinutos);
+        }
 
         // Calcula qué reaviso corresponde ahora (1 a 5).
         long minutosTranscurridos = Duration.between(
@@ -166,6 +188,27 @@ public class EscalamientoAlertaService {
 
             registrarNotificacion(alerta, asistente, fechaReaviso, TIPO_REAVISO);
         }
+    }
+
+    // Cambia la emergencia a PENDIENTE (Activa/Pendiente) y lo deja en el historial.
+    private void escalarAPendiente(Alerta alerta, long intervaloMinutos) {
+        EstadoAlerta pendiente = estadoAlertaRepository.findByCodigo("PENDIENTE").orElse(null);
+        if (pendiente == null) return; // Falta el estado en la base de datos.
+
+        EstadoAlerta estadoAnterior = alerta.getEstadoActual();
+        alerta.setEstadoActual(pendiente);
+        alertaRepository.save(alerta);
+
+        HistorialAlerta historial = new HistorialAlerta();
+        historial.setAlerta(alerta);
+        historial.setUsuarioActor(null); // Lo hace el sistema.
+        historial.setEstadoAnterior(estadoAnterior);
+        historial.setEstadoNuevo(pendiente);
+        historial.setAccion("ESCALAMIENTO_ALERTA");
+        historial.setObservacion("Nadie respondió que va en " + intervaloMinutos
+                + " minutos: la emergencia se escaló al administrador.");
+        historial.setFechaHora(LocalDateTime.now());
+        historialAlertaRepository.save(historial);
     }
 
     // Evita duplicar avisos para la misma fecha y destinatario.

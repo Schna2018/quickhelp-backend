@@ -3,9 +3,13 @@ package com.quickhelp.service;
 import com.quickhelp.dto.RespuestaAlertaRequestDTO; // Datos enviados desde la app móvil.
 import com.quickhelp.dto.RespuestaAlertaResponseDTO; // Datos de salida.
 import com.quickhelp.entity.Alerta; // Emergencia que recibe la respuesta.
+import com.quickhelp.entity.EstadoAlerta; // Estado EN_ATENCION.
+import com.quickhelp.entity.HistorialAlerta; // Registro del cambio de estado.
 import com.quickhelp.entity.RespuestaAlerta; // Registro de respuesta.
 import com.quickhelp.entity.Usuario; // Asistente autenticado.
 import com.quickhelp.repository.AlertaRepository; // Consulta y bloqueo de alertas.
+import com.quickhelp.repository.EstadoAlertaRepository; // Catálogo de estados.
+import com.quickhelp.repository.HistorialAlertaRepository; // Historial de la alerta.
 import com.quickhelp.repository.RespuestaAlertaRepository; // Persistencia de respuestas.
 import com.quickhelp.repository.UsuarioRepository; // Consulta de usuarios.
 import org.springframework.http.HttpStatus; // Estados de respuesta HTTP.
@@ -28,7 +32,15 @@ public class RespuestaAlertaService {
             "PERSONALIZADA"
     );
 
+    // Estados en que la emergencia sigue abierta.
+    private static final Set<String> ESTADOS_ABIERTOS = Set.of("ACTIVA", "PENDIENTE", "EN_ATENCION");
+
+    // Respuestas que significan que el asistente sí va a ir.
+    private static final Set<String> RESPUESTAS_QUE_ATIENDEN = Set.of("VOY_EN_CAMINO", "VOY_A_DEMORAR");
+
     private final AlertaRepository alertaRepository;
+    private final EstadoAlertaRepository estadoAlertaRepository;
+    private final HistorialAlertaRepository historialAlertaRepository;
     private final RespuestaAlertaRepository respuestaAlertaRepository;
     private final UsuarioRepository usuarioRepository;
     private final RedApoyoAutorizacionService autorizacionService;
@@ -36,10 +48,14 @@ public class RespuestaAlertaService {
     // Inyección de dependencias mediante constructor.
     public RespuestaAlertaService(
             AlertaRepository alertaRepository,
+            EstadoAlertaRepository estadoAlertaRepository,
+            HistorialAlertaRepository historialAlertaRepository,
             RespuestaAlertaRepository respuestaAlertaRepository,
             UsuarioRepository usuarioRepository,
             RedApoyoAutorizacionService autorizacionService) {
         this.alertaRepository = alertaRepository;
+        this.estadoAlertaRepository = estadoAlertaRepository;
+        this.historialAlertaRepository = historialAlertaRepository;
         this.respuestaAlertaRepository = respuestaAlertaRepository;
         this.usuarioRepository = usuarioRepository;
         this.autorizacionService = autorizacionService;
@@ -102,7 +118,7 @@ public class RespuestaAlertaService {
 
         // No permite responder emergencias resueltas o canceladas.
         String estado = alerta.getEstadoActual().getCodigo();
-        if (!"ACTIVA".equals(estado) && !"EN_ATENCION".equals(estado)) {
+        if (!ESTADOS_ABIERTOS.contains(estado)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "La alerta ya no admite respuestas.");
         }
@@ -129,7 +145,9 @@ public class RespuestaAlertaService {
         respuesta.setFechaHora(LocalDateTime.now());
 
         // Guarda y devuelve el identificador generado.
-        return respuestaAlertaRepository.save(respuesta).getIdRespuesta();
+        Integer idRespuesta = respuestaAlertaRepository.save(respuesta).getIdRespuesta();
+        pasarAEnAtencion(alerta, asistente, tipo);
+        return idRespuesta;
     }
 
     @Transactional(readOnly = true) // Consulta sin modificar registros.
@@ -248,7 +266,7 @@ public class RespuestaAlertaService {
         // Solo permite modificar respuestas de alertas abiertas.
         String estado = alerta.getEstadoActual().getCodigo();
 
-        if (!"ACTIVA".equals(estado) && !"EN_ATENCION".equals(estado)) {
+        if (!ESTADOS_ABIERTOS.contains(estado)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "La alerta ya está cerrada.");
         }
@@ -266,5 +284,40 @@ public class RespuestaAlertaService {
         respuesta.setFechaHora(LocalDateTime.now());
 
         respuestaAlertaRepository.save(respuesta); // Persiste la actualización.
+        pasarAEnAtencion(alerta, respuesta.getIntegrante(), tipo);
+    }
+
+    // «Voy en camino» o «Voy a demorar» pasan la emergencia ACTIVA o PENDIENTE a EN_ATENCION.
+    // «No puedo asistir» es un rechazo y no cambia el estado.
+    private void pasarAEnAtencion(Alerta alerta, Usuario asistente, String tipo) {
+        String codigo = alerta.getEstadoActual().getCodigo();
+        if (!RESPUESTAS_QUE_ATIENDEN.contains(tipo)
+                || (!"ACTIVA".equals(codigo) && !"PENDIENTE".equals(codigo))) {
+            return;
+        }
+
+        EstadoAlerta enAtencion = estadoAlertaRepository.findByCodigo("EN_ATENCION")
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "No existe el estado EN_ATENCION."));
+
+        EstadoAlerta estadoAnterior = alerta.getEstadoActual();
+        LocalDateTime ahora = LocalDateTime.now();
+
+        alerta.setEstadoActual(enAtencion);
+        alerta.setResponsableAtencion(asistente); // El primero que va queda como responsable.
+        alerta.setFechaAtencion(ahora);
+        alertaRepository.save(alerta);
+
+        HistorialAlerta historial = new HistorialAlerta();
+        historial.setAlerta(alerta);
+        historial.setUsuarioActor(asistente);
+        historial.setEstadoAnterior(estadoAnterior);
+        historial.setEstadoNuevo(enAtencion);
+        historial.setAccion("INICIO_ATENCION");
+        historial.setObservacion("VOY_EN_CAMINO".equals(tipo)
+                ? "El asistente respondió «Voy en camino»."
+                : "El asistente respondió «Voy a demorar».");
+        historial.setFechaHora(ahora);
+        historialAlertaRepository.save(historial);
     }
 }

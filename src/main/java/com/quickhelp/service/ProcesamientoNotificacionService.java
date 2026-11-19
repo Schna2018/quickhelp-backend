@@ -219,10 +219,10 @@ public class ProcesamientoNotificacionService {
         return Math.max(1, Math.min(5, minutos / intervalo));
     }
 
-    // Comprueba que la emergencia continúe activa.
+    // Comprueba que la emergencia continúe abierta (activa, pendiente o en atención).
     private boolean alertaActiva(Integer idAlerta) {
 
         return alertaRepository
-                .existsByIdAlertaAndEstadoActual_Codigo(idAlerta, "ACTIVA");
+                .existsByIdAlertaAndEstadoActual_CodigoIn(idAlerta, java.util.List.of("ACTIVA", "PENDIENTE", "EN_ATENCION"));
     }
 }

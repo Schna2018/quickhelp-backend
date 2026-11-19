@@ -53,6 +53,14 @@ public interface AlertaRepository extends JpaRepository<Alerta, Integer> {
     // Comprueba el estado en la base de datos, incluso en tareas sin sesión web.
     boolean existsByIdAlertaAndEstadoActual_Codigo(Integer idAlerta, String codigoEstado);
 
+    // Busca las alertas que están en alguno de los estados indicados.
+    List<Alerta> findByEstadoActual_CodigoInOrderByFechaCreacionDesc(
+            java.util.Collection<String> codigosEstado);
+
+    // Comprueba si la alerta sigue en alguno de los estados indicados.
+    boolean existsByIdAlertaAndEstadoActual_CodigoIn(
+            Integer idAlerta, java.util.Collection<String> codigosEstado);
+
     // Obtiene todas las alertas, ordenadas desde la más reciente.
     List<Alerta> findAllByOrderByFechaCreacionDesc();
 

@@ -102,7 +102,7 @@ public class AlertaService {
         // Busca una emergencia abierta del mismo adulto.
         var emergenciaAbierta = alertaRepository
                 .findFirstByAdultoMayor_IdUsuarioAndEstadoActual_CodigoInOrderByFechaCreacionDescIdAlertaDesc(
-                        idAdulto, List.of("ACTIVA", "EN_ATENCION"));
+                        idAdulto, List.of("ACTIVA", "PENDIENTE", "EN_ATENCION"));
 
         if (emergenciaAbierta.isPresent()) {
             Alerta existente = emergenciaAbierta.get();
@@ -464,7 +464,8 @@ public class AlertaService {
         redApoyoAutorizacionService.validarAccesoAsistente(
                 alerta.getAdultoMayor().getIdUsuario(), authentication);
 
-        if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())) {
+        if (!"ACTIVA".equals(alerta.getEstadoActual().getCodigo())
+                && !"PENDIENTE".equals(alerta.getEstadoActual().getCodigo())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "La alerta no está disponible para iniciar atención.");
@@ -575,7 +576,7 @@ public class AlertaService {
                 "El asistente resolvió la emergencia.");
     }
 
-    // Permite al administrador finalizar una emergencia activa o en atención.
+    // Permite al administrador finalizar una emergencia activa, pendiente o en atención.
     @Transactional
     public void resolverAlertaAdministracion(
             Integer idAlerta,
@@ -615,6 +616,7 @@ public class AlertaService {
 
         // Solo se pueden cerrar emergencias todavía abiertas.
         if (!"ACTIVA".equals(codigoAnterior)
+                && !"PENDIENTE".equals(codigoAnterior)
                 && !"EN_ATENCION".equals(codigoAnterior)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
