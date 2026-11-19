@@ -1,3 +1,4 @@
+
 package com.quickhelp.service;
 
 import com.google.firebase.messaging.AndroidConfig; // Configuración de entrega en Android.
@@ -9,10 +10,16 @@ import com.google.firebase.messaging.FirebaseMessaging; // Servicio de envío de
 import com.google.firebase.messaging.FirebaseMessagingException; // Errores del envío.
 import com.google.firebase.messaging.Message; // Mensaje enviado al dispositivo.
 import com.google.firebase.messaging.Notification; // Título y contenido visible.
+import org.slf4j.Logger; // Registro de errores técnicos.
+import org.slf4j.LoggerFactory; // Inicialización del logger.
 import org.springframework.stereotype.Service; // Registra el servicio en Spring.
 
 @Service
 public class FirebaseMessagingService {
+
+    // Registra errores técnicos sin mostrar tokens FCM.
+    private static final Logger logger =
+            LoggerFactory.getLogger(FirebaseMessagingService.class);
 
     // La app crea estos canales y empaqueta un WAV para cada tipo de aviso.
     // El sonido nuevo de emergencia necesita un canal nuevo en Android.
@@ -114,7 +121,10 @@ public class FirebaseMessagingService {
                 .setAndroidConfig(configuracionAndroid)
                 .setApnsConfig(ApnsConfig.builder()
                         .setAps(Aps.builder()
-                                .setAlert(ApsAlert.builder().setTitle(titulo).setBody(cuerpo).build())
+                                .setAlert(ApsAlert.builder()
+                                        .setTitle(titulo)
+                                        .setBody(cuerpo)
+                                        .build())
                                 .setSound(sonido + ".wav") // Archivo incluido en iOS.
                                 .build())
                         .build())
@@ -125,7 +135,39 @@ public class FirebaseMessagingService {
             mensaje.putData("idMensaje", idMensaje.toString());
         }
 
-        // Devuelve el identificador aceptado por Firebase.
-        return FirebaseMessaging.getInstance().send(mensaje.build());
+        // Envía el mensaje y registra los errores técnicos de Firebase.
+        try {
+            // Devuelve el identificador aceptado por Firebase.
+            return FirebaseMessaging.getInstance().send(mensaje.build());
+
+        } catch (FirebaseMessagingException ex) {
+
+            // Registra el código de Firebase y la traza técnica del fallo.
+            logger.error(
+                    "QUICKHELP_FCM_ERROR: tipo={}, alerta={}, codigo={}, mensaje={}",
+                    tipo,
+                    idAlerta,
+                    ex.getErrorCode(),
+                    ex.getMessage(),
+                    ex
+            );
+
+            // Conserva el comportamiento original del procesamiento.
+            throw ex;
+
+        } catch (RuntimeException ex) {
+
+            // Registra errores inesperados durante el envío.
+            logger.error(
+                    "QUICKHELP_FCM_ERROR_INESPERADO: tipo={}, alerta={}, causa={}",
+                    tipo,
+                    idAlerta,
+                    ex.getClass().getName(),
+                    ex
+            );
+
+            // No oculta el fallo ni marca el mensaje como enviado.
+            throw ex;
+        }
     }
 }
