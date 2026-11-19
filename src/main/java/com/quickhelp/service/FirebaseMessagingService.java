@@ -15,9 +15,10 @@ import org.springframework.stereotype.Service; // Registra el servicio en Spring
 public class FirebaseMessagingService {
 
     // La app crea estos canales y empaqueta un WAV para cada tipo de aviso.
-    private static final String CANAL_SOS = "quickhelp_sos_v1";
+    // El sonido nuevo de emergencia necesita un canal nuevo en Android.
+    private static final String CANAL_SOS = "quickhelp_sos_v2";
     private static final String CANAL_CHAT = "quickhelp_chat_v1";
-    private static final String SONIDO_SOS = "quickhelp_sos";
+    private static final String SONIDO_SOS = "quickhelp_sos_alerta";
     private static final String SONIDO_CHAT = "quickhelp_chat";
 
     // Conserva el método utilizado por el procesamiento y escalamiento SOS.
@@ -93,6 +94,10 @@ public class FirebaseMessagingService {
                 AndroidNotification.builder()
                         .setChannelId(canal) // Selecciona el canal SOS o chat.
                         .setSound(sonido) // Recurso res/raw para Android sin canales.
+                        // La emergencia se ve completa con la pantalla bloqueada; el chat no.
+                        .setVisibility("ALERTA_EMERGENCIA".equals(tipo)
+                                ? AndroidNotification.Visibility.PUBLIC
+                                : AndroidNotification.Visibility.PRIVATE)
                         .build();
 
         AndroidConfig configuracionAndroid = AndroidConfig.builder()
