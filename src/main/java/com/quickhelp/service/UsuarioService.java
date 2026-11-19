@@ -5,6 +5,8 @@ import com.quickhelp.dto.UsuarioRequestDTO; // Datos para crear usuarios.
 import com.quickhelp.dto.UsuarioUpdateDTO; // Datos para actualizar usuarios.
 import com.quickhelp.entity.Rol; // Entidad de roles.
 import com.quickhelp.entity.Usuario; // Entidad de usuarios.
+import com.quickhelp.repository.AlertaRepository; // Consulta emergencias relacionadas.
+import com.quickhelp.repository.HistorialAlertaRepository; // Consulta acciones históricas.
 import com.quickhelp.repository.RolRepository; // Acceso a los roles.
 import com.quickhelp.repository.UsuarioRepository; // Acceso a los usuarios.
 import java.util.List; // Listas de usuarios.
@@ -21,13 +23,19 @@ public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository; // Repositorio de usuarios.
     private final RolRepository rolRepository; // Repositorio de roles.
+    private final AlertaRepository alertaRepository; // Repositorio de emergencias.
+    private final HistorialAlertaRepository historialAlertaRepository; // Repositorio del historial.
     private final PasswordEncoder passwordEncoder; // Codificador BCrypt.
 
     public UsuarioService(UsuarioRepository usuarioRepository,
                           RolRepository rolRepository,
+                          AlertaRepository alertaRepository,
+                          HistorialAlertaRepository historialAlertaRepository,
                           PasswordEncoder passwordEncoder) {
         this.usuarioRepository = usuarioRepository;
         this.rolRepository = rolRepository;
+        this.alertaRepository = alertaRepository;
+        this.historialAlertaRepository = historialAlertaRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -164,24 +172,56 @@ public class UsuarioService {
         usuarioRepository.save(usuario); // Conserva el historial.
     }
 
-    @Transactional // Elimina físicamente un usuario cuando PostgreSQL lo permite.
+    /**
+     * ELIMINACIÓN DEFINITIVA DE USUARIOS.
+     * Comprueba las relaciones históricas antes de ejecutar el DELETE.
+     * Protege las emergencias y los registros de atención.
+     * PostgreSQL mantiene sus restricciones de integridad referencial.
+     */
+    @Transactional
     public void eliminarUsuarioDefinitivamente(Integer idUsuario) {
 
+        // Comprueba que el usuario exista en PostgreSQL.
         Usuario usuario = usuarioRepository.findById(idUsuario)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Usuario no encontrado."));
 
+        // Impide eliminar usuarios relacionados con alguna emergencia.
+        boolean tieneEmergencias =
+                alertaRepository.existeAlertaRelacionadaConUsuario(idUsuario);
+
+        if (tieneEmergencias) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No se puede eliminar definitivamente este usuario porque " +
+                    "tiene emergencias relacionadas. Puedes desactivar su cuenta " +
+                    "para conservar el historial.");
+        }
+
+        // Impide eliminar usuarios que realizaron acciones históricas.
+        boolean tieneHistorial =
+                historialAlertaRepository.existeHistorialRelacionadoConUsuario(idUsuario);
+
+        if (tieneHistorial) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No se puede eliminar definitivamente este usuario porque " +
+                    "tiene acciones registradas en el historial de emergencias. " +
+                    "Puedes desactivar su cuenta.");
+        }
+
+        // Elimina físicamente únicamente cuando no existen relaciones detectadas.
         try {
-            // Borra el registro real, no modifica únicamente su estado.
             usuarioRepository.delete(usuario);
 
-            // Ejecuta el DELETE para detectar restricciones de PostgreSQL.
+            // Ejecuta el DELETE y comprueba las restricciones de PostgreSQL.
             usuarioRepository.flush();
 
         } catch (DataIntegrityViolationException e) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "No se puede eliminar definitivamente este usuario porque tiene registros relacionados.",
+                    "No se puede eliminar definitivamente este usuario porque " +
+                    "tiene otros registros relacionados.",
                     e);
         }
     }
