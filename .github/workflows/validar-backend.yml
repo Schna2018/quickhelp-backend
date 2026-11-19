@@ -38,3 +38,31 @@ jobs:
         run: |
           mvn -B dependency:tree \
             -Dincludes=com.google.firebase:firebase-admin,com.google.auth:*,com.google.http-client:*,com.google.api-client:*,org.apache.httpcomponents.client5:*
+            
+      # Diagnostica la respuesta HTTP del servicio FCM sin usar credenciales.
+      - name: Diagnosticar comunicacion HTTP con Firebase
+        run: |
+          python3 - <<'PY'
+          import urllib.error
+          import urllib.request
+
+          url = "https://fcm.googleapis.com/v1/projects/quickhelp-diagnostico/messages:send"
+
+          for compresion in (False, True):
+              headers = {"Accept-Encoding": "gzip"} if compresion else {"Accept-Encoding": "identity"}
+              solicitud = urllib.request.Request(url, headers=headers, method="POST")
+
+              try:
+                  with urllib.request.urlopen(solicitud, timeout=15) as respuesta:
+                      print("Compresion solicitada:", compresion)
+                      print("HTTP:", respuesta.status)
+                      print("Content-Encoding:", respuesta.headers.get("Content-Encoding"))
+              except urllib.error.HTTPError as error:
+                  print("Compresion solicitada:", compresion)
+                  print("HTTP:", error.code)
+                  print("Content-Encoding:", error.headers.get("Content-Encoding"))
+              except Exception as error:
+                  print("Error de comunicacion:", type(error).__name__, str(error))
+                  raise
+          PY
+
