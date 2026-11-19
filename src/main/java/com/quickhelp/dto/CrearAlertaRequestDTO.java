@@ -7,6 +7,7 @@ import java.math.BigDecimal; // Permite almacenar coordenadas GPS decimales.
 public record CrearAlertaRequestDTO(
         BigDecimal latitud, // Latitud del adulto mayor.
         BigDecimal longitud, // Longitud del adulto mayor.
-        BigDecimal precisionMetros // Precisión GPS en metros.
+        BigDecimal precisionMetros, // Precisión GPS en metros.
+        String tipoActivacion // MANUAL, WIDGET, PANEL o VOZ; si falta se usa MANUAL.
 ) {
 }

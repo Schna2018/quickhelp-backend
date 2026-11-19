@@ -5,6 +5,7 @@ import com.quickhelp.repository.UsuarioRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.sql.SQLException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,7 +34,9 @@ public class MiPerfilController {
             String nombreApellido,
             String correo,
             String telefono,
-            String rol
+            String rol,
+            Boolean vozActiva,
+            String fraseActivacion
     ) {}
 
     // El formulario envía los tres datos personales. El teléfono es opcional.
@@ -48,6 +51,20 @@ public class MiPerfilController {
             if (telefono != null) {
                 telefono = telefono.strip();
                 if (telefono.isEmpty()) telefono = null;
+            }
+        }
+    }
+
+    // Activación por voz del adulto mayor: interruptor y frase clave.
+    public record ConfigurarVoz(
+            @NotNull Boolean vozActiva,
+            @Size(max = 100) String fraseActivacion
+    ) {
+        public ConfigurarVoz {
+            if (fraseActivacion != null) {
+                // Une espacios repetidos para comparar la frase de forma estable.
+                fraseActivacion = fraseActivacion.strip().replaceAll("\\s+", " ");
+                if (fraseActivacion.isEmpty()) fraseActivacion = null;
             }
         }
     }
@@ -93,6 +110,38 @@ public class MiPerfilController {
         return convertirPerfil(usuario);
     }
 
+    // Guarda la activación por voz. Solo el adulto mayor puede pedir ayuda por voz.
+    @PutMapping("/api/mi-perfil/voz")
+    @Transactional
+    public Perfil configurarVoz(
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody ConfigurarVoz cambios) {
+
+        Usuario usuario = obtenerUsuarioActivo(jwt);
+
+        if (!"ADULTO_MAYOR".equals(usuario.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Solo el adulto mayor puede usar la activación por voz.");
+        }
+
+        // Para activar la voz hace falta una frase de al menos dos palabras.
+        if (Boolean.TRUE.equals(cambios.vozActiva())
+                && (cambios.fraseActivacion() == null
+                    || cambios.fraseActivacion().split(" ").length < 2)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Escribe una frase de al menos dos palabras.");
+        }
+
+        usuario.setVozActiva(cambios.vozActiva());
+        // Al desactivar se conserva la frase anterior si no se envía una nueva.
+        if (cambios.fraseActivacion() != null) {
+            usuario.setFraseActivacion(cambios.fraseActivacion());
+        }
+        usuarios.saveAndFlush(usuario);
+
+        return convertirPerfil(usuario);
+    }
+
     private Usuario obtenerUsuarioActivo(Jwt jwt) {
         if (jwt == null || jwt.getSubject() == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
@@ -123,7 +172,9 @@ public class MiPerfilController {
                 usuario.getNombreApellido(),
                 usuario.getCorreo(),
                 usuario.getTelefono(),
-                usuario.getRol().getCodigo()
+                usuario.getRol().getCodigo(),
+                Boolean.TRUE.equals(usuario.getVozActiva()),
+                usuario.getFraseActivacion()
         );
     }
 

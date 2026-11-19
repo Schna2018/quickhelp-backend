@@ -119,7 +119,7 @@ public class AlertaService {
         Alerta alerta = new Alerta();
         alerta.setAdultoMayor(adulto);
         alerta.setEstadoActual(estadoInicial);
-        alerta.setTipoActivacion("MANUAL");
+        alerta.setTipoActivacion(tipoActivacion(request));
         alerta.setFechaCreacion(LocalDateTime.now());
         alerta.setIntervaloEscalamientoMinutos(obtenerIntervaloEscalamientoMinutos());
 
@@ -134,7 +134,7 @@ public class AlertaService {
         historial.setEstadoNuevo(estadoInicial);
         historial.setAccion("CREACION_ALERTA");
         historial.setObservacion(
-                "Emergencia activada manualmente por el adulto mayor.");
+                describirActivacion(alertaGuardada.getTipoActivacion()));
         historial.setFechaHora(LocalDateTime.now());
         historialAlertaRepository.save(historial);
 
@@ -151,6 +151,27 @@ public class AlertaService {
                 new AlertaCreadaEvent(alertaGuardada.getIdAlerta()));
 
         return alertaGuardada.getIdAlerta();
+    }
+
+    // Formas de activar una SOS: botón de la app, widget, panel rápido o voz.
+    private static final java.util.Set<String> TIPOS_ACTIVACION =
+            java.util.Set.of("MANUAL", "WIDGET", "PANEL", "VOZ");
+
+    // Usa el tipo enviado por la app; si falta o no es válido, queda MANUAL.
+    private String tipoActivacion(CrearAlertaRequestDTO request) {
+        if (request == null || request.tipoActivacion() == null) return "MANUAL";
+        String tipo = request.tipoActivacion().strip().toUpperCase(java.util.Locale.ROOT);
+        return TIPOS_ACTIVACION.contains(tipo) ? tipo : "MANUAL";
+    }
+
+    // Texto del historial según cómo se activó la emergencia.
+    private String describirActivacion(String tipo) {
+        return switch (tipo) {
+            case "VOZ" -> "Emergencia activada por voz por el adulto mayor.";
+            case "WIDGET" -> "Emergencia activada desde el widget por el adulto mayor.";
+            case "PANEL" -> "Emergencia activada desde el panel rápido por el adulto mayor.";
+            default -> "Emergencia activada manualmente por el adulto mayor.";
+        };
     }
 
     // Obtiene el intervalo configurado para el escalamiento SOS.
