@@ -25,6 +25,7 @@ public interface MensajeAlertaRepository
             UUID clave);
 
     // Consulta dispositivos de los participantes activos, salvo el autor y los tokens compartidos.
+    // Los asistentes solo reciben avisos del chat si ya respondieron la emergencia.
     @Transactional(readOnly = true)
     @Query("""
             SELECT DISTINCT TRIM(destinatario.tokenFcm)
@@ -55,6 +56,11 @@ public interface MensajeAlertaRepository
                       WHERE vinculo.adultoMayor.idUsuario = adulto.idUsuario
                         AND vinculo.integrante.idUsuario = destinatario.idUsuario
                         AND vinculo.estado = true
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM RespuestaAlerta respuesta
+                      WHERE respuesta.alerta.idAlerta = alerta.idAlerta
+                        AND respuesta.integrante.idUsuario = destinatario.idUsuario
                   ))
               )
             """)
