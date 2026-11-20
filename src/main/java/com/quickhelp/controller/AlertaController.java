@@ -1,4 +1,3 @@
-
 package com.quickhelp.controller;
 
 import com.quickhelp.dto.AlertaResponseDTO; // Respuesta de alertas.
@@ -56,6 +55,30 @@ public class AlertaController {
 
         return alertaService.consultarHistorialAdministracion(
                 idAlerta, authentication);
+    }
+
+    // Inicia o registra la intervención administrativa en una emergencia abierta.
+    @PatchMapping("/administracion/{idAlerta}/iniciar-atencion")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void iniciarAtencionAdministracion(
+            @PathVariable Integer idAlerta,
+            Authentication authentication) {
+
+        alertaService.iniciarAtencionAdministracion(idAlerta, authentication);
+    }
+
+    // Registra una actividad administrativa sin cerrar la emergencia.
+    @PostMapping("/administracion/{idAlerta}/actividades")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void registrarActividadAdministracion(
+            @PathVariable Integer idAlerta,
+            @RequestBody Map<String, String> request,
+            Authentication authentication) {
+
+        alertaService.registrarActividadAdministracion(
+                idAlerta,
+                request == null ? null : request.get("observacion"),
+                authentication);
     }
 
     // Permite al administrador finalizar una emergencia activa o en atención.
