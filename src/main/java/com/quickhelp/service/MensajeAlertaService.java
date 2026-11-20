@@ -1,3 +1,4 @@
+
 package com.quickhelp.service;
 
 import com.quickhelp.dto.MensajeAlertaRequestDTO; // Datos recibidos.
@@ -79,13 +80,8 @@ public class MensajeAlertaService {
         Alerta alerta = obtenerAlerta(idAlerta, true);
         validarLectura(alerta, usuario, authentication);
 
-        // El administrador puede consultar los mensajes.
-        if (esAdministrador(usuario)) {
-            throw new ResponseStatusException(
-                    HttpStatus.FORBIDDEN,
-                    "El administrador tiene acceso de lectura al chat.");
-        }
-
+        // Permite enviar mensajes a todos los participantes autorizados,
+        // incluido el administrador, sin modificar los permisos de lectura.
         String texto = solicitud.texto().strip();
 
         // Devuelve el mensaje existente cuando se reintenta el mismo envío.
