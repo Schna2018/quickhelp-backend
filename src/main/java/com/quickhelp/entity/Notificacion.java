@@ -27,6 +27,9 @@ public class Notificacion {
     @Column(name = "canal", nullable = false)
     private String canal;
 
+    @Column(name = "tipo_aviso", length = 30)
+    private String tipoAviso; // Clasificación permanente del aviso SOS.
+
     @Column(name = "estado_envio", nullable = false)
     private String estadoEnvio;
 
@@ -85,6 +88,15 @@ public class Notificacion {
 
     public void setCanal(String canal) {
         this.canal = canal;
+    }
+
+    // Tipo de aviso SOS.
+    public String getTipoAviso() {
+        return tipoAviso;
+    }
+
+    public void setTipoAviso(String tipoAviso) {
+        this.tipoAviso = tipoAviso;
     }
 
     // Estado del envío.
