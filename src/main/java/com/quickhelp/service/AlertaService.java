@@ -507,6 +507,112 @@ public class AlertaService {
                 "El asistente inició la atención de la emergencia.");
     }
 
+    // Inicia la atención administrativa sin desplazar al asistente existente.
+    @Transactional
+    public void iniciarAtencionAdministracion(
+            Integer idAlerta,
+            Authentication authentication) {
+
+        Usuario administrador = obtenerAdministradorActivo(authentication);
+        Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Alerta no encontrada."));
+
+        EstadoAlerta estadoAnterior = alerta.getEstadoActual();
+        String codigo = estadoAnterior.getCodigo();
+        if (!"ACTIVA".equals(codigo) && !"PENDIENTE".equals(codigo)
+                && !"EN_ATENCION".equals(codigo)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "La emergencia no admite intervención.");
+        }
+
+        String accion;
+        String detalle;
+        EstadoAlerta estadoNuevo = estadoAnterior;
+        if ("EN_ATENCION".equals(codigo)) {
+            // No cambia el responsable ni la fecha de una atención en curso.
+            accion = "INTERVENCION_ADMINISTRATIVA";
+            detalle = "El administrador se incorporó a la atención existente.";
+        } else {
+            estadoNuevo = estadoAlertaRepository.findByCodigo("EN_ATENCION")
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.INTERNAL_SERVER_ERROR,
+                            "No existe el estado EN_ATENCION."));
+            alerta.setEstadoActual(estadoNuevo);
+            alerta.setResponsableAtencion(administrador);
+            alerta.setFechaAtencion(LocalDateTime.now());
+            alertaRepository.save(alerta);
+            accion = "INICIO_ATENCION_ADMINISTRATIVA";
+            detalle = "El administrador inició la atención de la emergencia.";
+        }
+
+        HistorialAlerta historial = new HistorialAlerta();
+        historial.setAlerta(alerta);
+        historial.setUsuarioActor(administrador);
+        historial.setEstadoAnterior(estadoAnterior);
+        historial.setEstadoNuevo(estadoNuevo);
+        historial.setAccion(accion);
+        historial.setObservacion(detalle);
+        historial.setFechaHora(LocalDateTime.now());
+        historialAlertaRepository.save(historial);
+        registrarAuditoria(administrador, idAlerta, accion, detalle);
+    }
+
+    // Registra gestiones administrativas sin alterar el estado de la alerta.
+    @Transactional
+    public void registrarActividadAdministracion(
+            Integer idAlerta,
+            String observacion,
+            Authentication authentication) {
+
+        Usuario administrador = obtenerAdministradorActivo(authentication);
+        if (observacion == null || observacion.isBlank()
+                || observacion.strip().length() > 2000) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "La actividad debe contener entre 1 y 2000 caracteres.");
+        }
+
+        Alerta alerta = alertaRepository.buscarPorIdConBloqueo(idAlerta)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Alerta no encontrada."));
+        String codigo = alerta.getEstadoActual().getCodigo();
+        if (!"ACTIVA".equals(codigo) && !"PENDIENTE".equals(codigo)
+                && !"EN_ATENCION".equals(codigo)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "La emergencia ya está cerrada.");
+        }
+
+        String detalle = observacion.strip();
+        HistorialAlerta historial = new HistorialAlerta();
+        historial.setAlerta(alerta);
+        historial.setUsuarioActor(administrador);
+        historial.setEstadoAnterior(alerta.getEstadoActual());
+        historial.setEstadoNuevo(alerta.getEstadoActual());
+        historial.setAccion("ACTIVIDAD_ADMINISTRATIVA");
+        historial.setObservacion(detalle);
+        historial.setFechaHora(LocalDateTime.now());
+        historialAlertaRepository.save(historial);
+        registrarAuditoria(administrador, idAlerta,
+                "ACTIVIDAD_ADMINISTRATIVA", detalle);
+    }
+
+    // Comprueba el rol administrativo vigente desde la cuenta autenticada.
+    private Usuario obtenerAdministradorActivo(Authentication authentication) {
+        Integer idUsuario = obtenerIdAutenticado(authentication);
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Usuario no autorizado."));
+        if (!Boolean.TRUE.equals(usuario.getEstado())
+                || usuario.getRol() == null
+                || !Boolean.TRUE.equals(usuario.getRol().getEstado())
+                || !"ADMIN".equals(usuario.getRol().getCodigo())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "Acceso exclusivo para administradores.");
+        }
+        return usuario;
+    }
+
     // Permite resolver una emergencia al asistente responsable.
     @Transactional
     public void resolverAlerta(
