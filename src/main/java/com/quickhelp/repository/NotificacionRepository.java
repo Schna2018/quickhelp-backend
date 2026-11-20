@@ -70,15 +70,15 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Inte
             String canal,
             LocalDateTime fechaProgramada);
 
-    // Consulta las notificaciones pendientes cuya fecha programada ya se cumplió.
-    // Carga el destinatario y la alerta para evitar problemas de relaciones LAZY.
-    // Excluye las notificaciones de emergencias que ya no están activas.
+    // Consulta los avisos programados de emergencias activas o pendientes.
+    // Mantiene los reavisos cuando la emergencia pasa a PENDIENTE.
+    // Excluye EN_ATENCION para detener los reavisos tras confirmar atención.
     @EntityGraph(attributePaths = {"destinatario", "alerta", "alerta.estadoActual"})
     @Query("""
             SELECT n FROM Notificacion n
             WHERE n.estadoEnvio = 'PENDIENTE'
               AND n.fechaProgramada <= :ahora
-              AND n.alerta.estadoActual.codigo = 'ACTIVA'
+              AND n.alerta.estadoActual.codigo IN ('ACTIVA', 'PENDIENTE')
             ORDER BY n.fechaProgramada ASC, n.idNotificacion ASC
             """)
     List<Notificacion> buscarPendientesProgramadas(
