@@ -74,7 +74,7 @@ public class CorreoService {
         try {
             brevo.post()
                     .uri("/smtp/email")
-                    .header("api-key", apiKey)
+                    .header("api-key", apiKey.trim()) // Evita espacios invisibles al pegar la clave.
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(cuerpo)
