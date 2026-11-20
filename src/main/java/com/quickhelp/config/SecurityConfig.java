@@ -43,7 +43,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/login", // Inicio de sesión público.
                                 "/api/auth/registro/adulto", // Registro de adultos mayores.
-                                "/api/auth/registro/asistente" // Registro de personas de apoyo.
+                                "/api/auth/registro/asistente", // Registro de personas de apoyo.
+                                "/api/auth/recuperar-clave/solicitar", // Pedir código por correo.
+                                "/api/auth/recuperar-clave/cambiar" // Cambiar contraseña con el código.
                         ).permitAll()
 
                         // Solo administradores pueden consultar configuraciones.
