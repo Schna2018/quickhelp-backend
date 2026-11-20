@@ -539,12 +539,14 @@ public class AlertaService {
                             HttpStatus.INTERNAL_SERVER_ERROR,
                             "No existe el estado EN_ATENCION."));
             alerta.setEstadoActual(estadoNuevo);
-            alerta.setResponsableAtencion(administrador);
             alerta.setFechaAtencion(LocalDateTime.now());
-            alertaRepository.save(alerta);
             accion = "INICIO_ATENCION_ADMINISTRATIVA";
             detalle = "El administrador inició la atención de la emergencia.";
         }
+
+        // Asigna al operador administrativo sin reemplazar al asistente responsable.
+        alerta.setOperadorAsignado(administrador);
+        alertaRepository.save(alerta);
 
         HistorialAlerta historial = new HistorialAlerta();
         historial.setAlerta(alerta);
