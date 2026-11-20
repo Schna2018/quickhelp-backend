@@ -85,12 +85,10 @@ public class ProcesamientoNotificacionService {
                 // Comprueba nuevamente que la emergencia esté activa.
                 if (!alertaActiva(idAlerta)) {
 
-                    // Conserva el estado compatible con el flujo actual.
                     resultado = "Envío omitido: la alerta ya no está activa.";
 
                 } else if (notificacion.getDestinatario() == null) {
 
-                    // Identifica registros sin un destinatario asociado.
                     resultado = "La notificación no tiene destinatario registrado.";
 
                 } else {
@@ -104,8 +102,18 @@ public class ProcesamientoNotificacionService {
 
                     } else {
 
-                        // Recupera el tipo de aviso registrado.
-                        String tipoAviso = notificacion.getResultado();
+                        // Recupera la clasificación permanente del aviso.
+                        String tipoAviso = notificacion.getTipoAviso();
+
+                        // Compatibilidad con avisos pendientes anteriores.
+                        if (tipoAviso == null) {
+                            String resultadoAnterior = notificacion.getResultado();
+
+                            if (TIPO_ADMIN.equals(resultadoAnterior)
+                                    || TIPO_REAVISO.equals(resultadoAnterior)) {
+                                tipoAviso = resultadoAnterior;
+                            }
+                        }
 
                         // Construye el mensaje de emergencia normal.
                         String titulo = "🚨 Emergencia de " + nombre;
@@ -219,10 +227,11 @@ public class ProcesamientoNotificacionService {
         return Math.max(1, Math.min(5, minutos / intervalo));
     }
 
-    // Comprueba que la emergencia continúe abierta (activa, pendiente o en atención).
+    // Comprueba que la emergencia continúe abierta.
     private boolean alertaActiva(Integer idAlerta) {
 
-        return alertaRepository
-                .existsByIdAlertaAndEstadoActual_CodigoIn(idAlerta, java.util.List.of("ACTIVA", "PENDIENTE", "EN_ATENCION"));
+        return alertaRepository.existsByIdAlertaAndEstadoActual_CodigoIn(
+                idAlerta,
+                List.of("ACTIVA", "PENDIENTE", "EN_ATENCION"));
     }
 }
