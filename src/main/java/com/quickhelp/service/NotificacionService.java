@@ -1,24 +1,23 @@
 
 package com.quickhelp.service;
 
-import com.quickhelp.dto.NotificacionAdminResponseDTO; // Datos para el panel administrativo.
-import com.quickhelp.entity.Alerta; // Emergencia que origina las notificaciones.
-import com.quickhelp.entity.Notificacion; // Entidad de notificaciones.
-import com.quickhelp.entity.RedApoyo; // Vinculación con integrantes de apoyo.
-import com.quickhelp.entity.Rol; // Rol vigente del administrador.
-import com.quickhelp.entity.Usuario; // Usuario autenticado y destinatario del aviso.
-import com.quickhelp.repository.NotificacionRepository; // Guarda las notificaciones.
-import com.quickhelp.repository.RedApoyoRepository; // Consulta la red de apoyo.
-import com.quickhelp.repository.UsuarioRepository; // Consulta el estado del administrador.
-import org.springframework.stereotype.Service; // Servicio administrado por Spring.
-import org.springframework.transaction.annotation.Transactional; // Control transaccional.
-import java.time.LocalDateTime; // Fecha de programación.
-import java.util.List; // Lista de integrantes.
-import com.quickhelp.dto.NotificacionResponseDTO; // Datos de salida.
+import com.quickhelp.dto.NotificacionAdminResponseDTO; // Datos del panel administrativo.
+import com.quickhelp.dto.NotificacionResponseDTO; // Datos de notificaciones móviles.
+import com.quickhelp.entity.Alerta; // Emergencia asociada.
+import com.quickhelp.entity.Notificacion; // Registro de notificación.
+import com.quickhelp.entity.RedApoyo; // Integrantes de apoyo.
+import com.quickhelp.entity.Rol; // Rol del administrador.
+import com.quickhelp.entity.Usuario; // Usuario y destinatario.
+import com.quickhelp.repository.NotificacionRepository; // Repositorio de notificaciones.
+import com.quickhelp.repository.RedApoyoRepository; // Repositorio de red de apoyo.
+import com.quickhelp.repository.UsuarioRepository; // Repositorio de usuarios.
 import org.springframework.http.HttpStatus; // Estados HTTP.
 import org.springframework.security.core.Authentication; // Identidad JWT.
+import org.springframework.stereotype.Service; // Servicio Spring.
+import org.springframework.transaction.annotation.Transactional; // Transacciones.
 import org.springframework.web.server.ResponseStatusException; // Errores HTTP.
-
+import java.time.LocalDateTime; // Fechas de programación.
+import java.util.List; // Listas de registros.
 
 @Service
 public class NotificacionService {
@@ -67,12 +66,13 @@ public class NotificacionService {
                 continue;
             }
 
-            // Construye la notificación pendiente.
+            // Construye la notificación inicial pendiente.
             Notificacion notificacion = new Notificacion();
             notificacion.setAlerta(alerta);
             notificacion.setDestinatario(integrante.getIntegrante());
             notificacion.setNumeroIntento(0);
             notificacion.setCanal("PUSH");
+            notificacion.setTipoAviso("ALERTA_INICIAL"); // Conserva el tipo de aviso.
             notificacion.setEstadoEnvio("PENDIENTE");
             notificacion.setFechaProgramada(LocalDateTime.now());
             notificacion.setFechaEnvio(null);
@@ -82,7 +82,7 @@ public class NotificacionService {
             notificacionRepository.save(notificacion);
         }
     }
-    
+
     @Transactional(readOnly = true) // Consulta sin modificar la base de datos.
     public List<NotificacionResponseDTO> listarMisNotificaciones(
             Authentication authentication) {
@@ -133,10 +133,11 @@ public class NotificacionService {
     private NotificacionAdminResponseDTO convertirNotificacionAdministrativa(Notificacion notificacion) {
         Usuario destinatario = notificacion.getDestinatario();
         String resultado = notificacion.getResultado();
-        String tipoAviso = null;
+        String tipoAviso = notificacion.getTipoAviso(); // Clasificación independiente del resultado.
 
-        // Al finalizar el envío, el resultado sustituye el código del aviso.
-        if ("ESCALAMIENTO_ADMIN".equals(resultado) || "REAVISO_RED".equals(resultado)) {
+        // Compatibilidad con registros anteriores que guardaban el tipo en resultado.
+        if (tipoAviso == null
+                && ("ESCALAMIENTO_ADMIN".equals(resultado) || "REAVISO_RED".equals(resultado))) {
             tipoAviso = resultado;
             resultado = null;
         }
@@ -170,5 +171,4 @@ public class NotificacionService {
                     HttpStatus.UNAUTHORIZED, "Token de usuario no válido.");
         }
     }
-
 }
