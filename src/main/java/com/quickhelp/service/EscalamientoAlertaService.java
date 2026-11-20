@@ -39,7 +39,8 @@ public class EscalamientoAlertaService {
     private static final int MAXIMO_REAVISOS = 5;
 
     // Estados en que la emergencia sigue abierta (los reavisos continúan en todos).
-    private static final List<String> ESTADOS_ABIERTOS = List.of("ACTIVA", "PENDIENTE", "EN_ATENCION");
+    private static final List<String> ESTADOS_ABIERTOS =
+            List.of("ACTIVA", "PENDIENTE", "EN_ATENCION");
 
     private final AlertaRepository alertaRepository;
     private final EstadoAlertaRepository estadoAlertaRepository;
@@ -236,10 +237,11 @@ public class EscalamientoAlertaService {
         notificacion.setDestinatario(destinatario);
         notificacion.setNumeroIntento(0);
         notificacion.setCanal("PUSH");
+        notificacion.setTipoAviso(tipoAviso); // Conserva el tipo de recordatorio.
         notificacion.setEstadoEnvio("PENDIENTE");
         notificacion.setFechaProgramada(fechaProgramada);
         notificacion.setFechaEnvio(null);
-        notificacion.setResultado(tipoAviso);
+        notificacion.setResultado(null); // Se completará con el resultado de Firebase.
 
         notificacionRepository.save(notificacion);
     }
