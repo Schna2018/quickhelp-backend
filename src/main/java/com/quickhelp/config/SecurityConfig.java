@@ -174,6 +174,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(List.of(
                 "http://localhost:8100", // Ionic en el navegador durante el desarrollo.
                 "http://localhost:4200", // Portal web durante el desarrollo.
+                "https://quick-help-web.vercel.app", // Portal web publicado en Vercel.
                 "https://localhost", // Aplicación Android con Capacitor.
                 "capacitor://localhost" // Aplicación iOS con Capacitor.
         ));
